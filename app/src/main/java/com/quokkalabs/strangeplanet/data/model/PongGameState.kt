@@ -1,7 +1,7 @@
 package com.quokkalabs.strangeplanet.data.model
 
 enum class GamePhase {
-    READY, SERVING, PLAYING, POINT_SCORED, GAME_OVER
+    READY, SERVING, PLAYING, POINT_SCORED, GAME_OVER, PAUSED
 }
 
 enum class GameSide {

@@ -3,7 +3,7 @@ package com.quokkalabs.strangeplanet.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.quokkalabs.strangeplanet.StrangePlanetApp
+import com.quokkalabs.strangeplanet.R
 import com.quokkalabs.strangeplanet.audio.PongSoundManager
 import com.quokkalabs.strangeplanet.bluetooth.BluetoothPongManager
 import com.quokkalabs.strangeplanet.data.model.BallTrailPoint
@@ -36,6 +36,15 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _btState = MutableStateFlow(BluetoothLobbyState())
     val btState: StateFlow<BluetoothLobbyState> = _btState.asStateFlow()
+
+    private val _playerCreature = MutableStateFlow(R.drawable.sp_pong_player)
+    val playerCreature: StateFlow<Int> = _playerCreature.asStateFlow()
+
+    private val _opponentCreature = MutableStateFlow(R.drawable.sp_pong_cat)
+    val opponentCreature: StateFlow<Int> = _opponentCreature.asStateFlow()
+
+    private val _player2Creature = MutableStateFlow(R.drawable.sp_pong_cat)
+    val player2Creature: StateFlow<Int> = _player2Creature.asStateFlow()
 
     private val pongSound = PongSoundManager()
 
@@ -306,6 +315,43 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             val bt = btManager ?: return
             _btState.update { it.copy(enabled = bt.isEnabled) }
             if (bt.isEnabled) bt.loadPairedDevices()
+        }
+    }
+
+    // ---- Creature selection ----
+
+    private val allCreatures = listOf(
+        R.drawable.sp_pong_player,
+        R.drawable.sp_pong_cat,
+        R.drawable.sp_pong_dog,
+    )
+
+    fun selectCreature(resId: Int) {
+        _playerCreature.value = resId
+        _opponentCreature.value = allCreatures.filter { it != resId }.random()
+    }
+
+    fun selectPlayer2Creature(resId: Int) {
+        _player2Creature.value = resId
+    }
+
+    // ---- Reset ----
+
+    fun resetGame() {
+        val e = engine ?: return
+        _gameState.value = e.createInitialState()
+        clientTrail.clear()
+    }
+
+    // ---- Pause ----
+
+    fun togglePause() {
+        _gameState.update { state ->
+            when (state.phase) {
+                GamePhase.PLAYING -> state.copy(phase = GamePhase.PAUSED)
+                GamePhase.PAUSED -> state.copy(phase = GamePhase.PLAYING)
+                else -> state
+            }
         }
     }
 

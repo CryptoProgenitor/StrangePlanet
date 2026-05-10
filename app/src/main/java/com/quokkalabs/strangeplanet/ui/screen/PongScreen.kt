@@ -14,24 +14,33 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -43,6 +52,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -51,10 +64,12 @@ import androidx.compose.ui.unit.sp
 import com.quokkalabs.strangeplanet.R
 import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
 import com.quokkalabs.strangeplanet.data.model.BtConnectionState
+import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.GameSide
 import com.quokkalabs.strangeplanet.data.model.PongGameState
+import com.quokkalabs.strangeplanet.data.model.PongSettings
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CardPink
@@ -69,7 +84,31 @@ fun PongScreen(
 ) {
     val state by viewModel.gameState.collectAsState()
     val btState by viewModel.btState.collectAsState()
+    val settings by viewModel.pongSettings.collectAsState()
+    val playerCreature by viewModel.playerCreature.collectAsState()
+    val opponentCreature by viewModel.opponentCreature.collectAsState()
+    val player2Creature by viewModel.player2Creature.collectAsState()
+    var showSettings by remember { mutableStateOf(false) }
+    var showExitConfirm by remember { mutableStateOf(false) }
     val density = LocalDensity.current
+    val view = LocalView.current
+
+    // Immersive sticky mode — hide system bars during gameplay
+    DisposableEffect(Unit) {
+        val window = (view.context as? android.app.Activity)?.window
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        onDispose {
+            if (window != null) {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
 
     // Bluetooth permission launcher
     val btPermissionLauncher = rememberLauncherForActivityResult(
@@ -113,8 +152,10 @@ fun PongScreen(
                 // Game canvas
                 GameCanvas(state = state)
 
-                // AI creature (top, flipped)
+                // Top creature (AI / player 2)
+                val topCreature = if (state.gameMode == GameMode.TWO_PLAYER) player2Creature else opponentCreature
                 PongCreature(
+                    drawableRes = topCreature,
                     paddleX = state.aiPaddleX,
                     paddleY = state.aiPaddleY,
                     isFlipped = true,
@@ -123,6 +164,7 @@ fun PongScreen(
 
                 // Player creature (bottom)
                 PongCreature(
+                    drawableRes = playerCreature,
                     paddleX = state.playerPaddleX,
                     paddleY = state.playerPaddleY,
                     isFlipped = false,
@@ -130,25 +172,53 @@ fun PongScreen(
                 )
 
                 // Score
-                Text(
-                    text = "${state.aiScore}  —  ${state.playerScore}",
-                    color = Color.White.copy(alpha = 0.25f),
-                    fontSize = 44.sp,
-                    fontWeight = FontWeight.Bold,
+                Column(
                     modifier = Modifier.align(Alignment.Center),
-                )
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    // "them" label for BT
+                    if (state.gameMode == GameMode.BLUETOOTH) {
+                        Text(
+                            "them",
+                            color = Color.White.copy(alpha = 0.30f),
+                            fontSize = 11.sp,
+                        )
+                    }
 
-                // Active saying
-                state.activeSaying?.let { (side, text) ->
-                    val yFraction = if (side == GameSide.AI) 0.25f else 0.72f
-                    SayingOverlay(
-                        text = text,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .offset(
-                                y = with(density) { (screenHeight * yFraction).toDp() },
-                            ),
+                    val scoreText = when (state.gameMode) {
+                        GameMode.TWO_PLAYER -> "↑${state.aiScore}  —  ${state.playerScore}↓"
+                        else -> "${state.aiScore}  —  ${state.playerScore}"
+                    }
+                    Text(
+                        text = scoreText,
+                        color = Color.White.copy(alpha = 0.25f),
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.Bold,
                     )
+
+                    // "me" label for BT
+                    if (state.gameMode == GameMode.BLUETOOTH) {
+                        Text(
+                            "me",
+                            color = Color.White.copy(alpha = 0.30f),
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
+
+                // Active saying (gated by settings)
+                if (settings.showSayings) {
+                    state.activeSaying?.let { (side, text) ->
+                        val yFraction = if (side == GameSide.AI) 0.25f else 0.72f
+                        SayingOverlay(
+                            text = text,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .offset(
+                                    y = with(density) { (screenHeight * yFraction).toDp() },
+                                ),
+                        )
+                    }
                 }
 
                 // Phase overlays
@@ -156,6 +226,11 @@ fun PongScreen(
                     GamePhase.READY -> ReadyOverlay(
                         gameMode = state.gameMode,
                         onModeSelected = { viewModel.selectMode(it) },
+                        onConfigure = { showSettings = true },
+                        selectedCreature = playerCreature,
+                        onSelectCreature = { viewModel.selectCreature(it) },
+                        selectedPlayer2Creature = player2Creature,
+                        onSelectPlayer2Creature = { viewModel.selectPlayer2Creature(it) },
                         btState = btState,
                         onBtHost = { viewModel.btHost() },
                         onBtScan = { viewModel.btScan() },
@@ -189,6 +264,42 @@ fun PongScreen(
                         modifier = Modifier.align(Alignment.Center),
                     )
 
+                    GamePhase.PAUSED -> {
+                        // Scrim
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                        )
+                        Column(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                "Activity Suspended",
+                                color = AlienPink,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = "Tap to Proceed",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .background(
+                                        SoftPink.copy(alpha = 0.6f),
+                                        RoundedCornerShape(12.dp),
+                                    )
+                                    .clickable { viewModel.togglePause() }
+                                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                            )
+                        }
+                    }
+
                     else -> {
                         // Show disconnect warning during gameplay
                         if (state.gameMode == GameMode.BLUETOOTH &&
@@ -204,9 +315,33 @@ fun PongScreen(
                     }
                 }
 
+                // Pause button (top-right, during gameplay)
+                if (state.phase == GamePhase.PLAYING) {
+                    FloatingActionButton(
+                        onClick = { viewModel.togglePause() },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 24.dp, end = 12.dp)
+                            .size(36.dp),
+                        shape = CircleShape,
+                        containerColor = AlienPink.copy(alpha = 0.5f),
+                        contentColor = DeepNavy,
+                    ) {
+                        Text("⏸", fontSize = 12.sp)
+                    }
+                }
+
                 // Back button
                 FloatingActionButton(
-                    onClick = onBack,
+                    onClick = {
+                        val phase = state.phase
+                        if (phase == GamePhase.READY || phase == GamePhase.GAME_OVER) {
+                            viewModel.resetGame(); onBack()
+                        } else {
+                            if (phase == GamePhase.PLAYING) viewModel.togglePause()
+                            showExitConfirm = true
+                        }
+                    },
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(top = 24.dp, start = 12.dp)
@@ -216,6 +351,74 @@ fun PongScreen(
                     contentColor = DeepNavy,
                 ) {
                     Text("←", fontSize = 14.sp)
+                }
+
+                // Exit confirmation
+                if (showExitConfirm) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .clickable { /* block taps */ },
+                    )
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
+                            .padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            "Abandon Contest?",
+                            color = AlienPink,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Progress will not\nbe preserved.",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(20.dp))
+                        Text(
+                            text = "Confirm Departure",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .background(AlienPink.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                                .clickable { showExitConfirm = false; viewModel.resetGame(); onBack() }
+                                .padding(horizontal = 20.dp, vertical = 12.dp),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = "Resume Activity",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                .clickable { showExitConfirm = false; viewModel.togglePause() }
+                                .padding(horizontal = 20.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+
+                // Settings modal
+                if (showSettings) {
+                    SettingsModal(
+                        settings = settings,
+                        onSoundToggle = { viewModel.setSoundEnabled(it) },
+                        onSayingsToggle = { viewModel.setShowSayings(it) },
+                        onDifficulty = { viewModel.setDifficulty(it) },
+                        onDismiss = { showSettings = false },
+                        modifier = Modifier.align(Alignment.Center),
+                    )
                 }
             }
         }
@@ -255,7 +458,7 @@ private fun GameCanvas(state: PongGameState) {
         }
 
         // Ball glow + body
-        if (state.phase == GamePhase.PLAYING || state.phase == GamePhase.POINT_SCORED) {
+        if (state.phase == GamePhase.PLAYING || state.phase == GamePhase.POINT_SCORED || state.phase == GamePhase.PAUSED) {
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
@@ -321,6 +524,7 @@ private fun GameCanvas(state: PongGameState) {
 
 @Composable
 private fun PongCreature(
+    drawableRes: Int,
     paddleX: Float,
     paddleY: Float,
     isFlipped: Boolean,
@@ -331,14 +535,15 @@ private fun PongCreature(
     val creatureSizePx = with(density) { creatureSize.toPx() }
     val scale = 1f + hitPulse * 0.12f
 
+    // Sprite edge sits flush against the paddle
     val yOffset = if (isFlipped) {
-        paddleY - creatureSizePx * 0.55f
+        paddleY - creatureSizePx * 0.5f   // sprite bottom edge at paddle
     } else {
-        paddleY + creatureSizePx * 0.05f
+        paddleY + creatureSizePx * 0.5f   // sprite top edge at paddle
     }
 
     Image(
-        painter = painterResource(id = R.drawable.sp_pong_player),
+        painter = painterResource(id = drawableRes),
         contentDescription = "Sphere Deflection Being",
         modifier = Modifier
             .offset(
@@ -378,6 +583,11 @@ private fun SayingOverlay(
 private fun ReadyOverlay(
     gameMode: GameMode,
     onModeSelected: (GameMode) -> Unit,
+    onConfigure: () -> Unit,
+    selectedCreature: Int,
+    onSelectCreature: (Int) -> Unit,
+    selectedPlayer2Creature: Int,
+    onSelectPlayer2Creature: (Int) -> Unit,
     btState: BluetoothLobbyState,
     onBtHost: () -> Unit,
     onBtScan: () -> Unit,
@@ -390,9 +600,9 @@ private fun ReadyOverlay(
     Column(
         modifier = modifier
             .widthIn(max = 300.dp)
-            .heightIn(max = 520.dp)
+            .heightIn(max = 560.dp)
             .background(DeepNavy.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
-            .padding(28.dp)
+            .padding(24.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -403,29 +613,112 @@ private fun ReadyOverlay(
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(14.dp))
 
         // Mode selector
         Text(
             "Select participants:",
             color = Color.White.copy(alpha = 0.5f),
-            fontSize = 13.sp,
+            fontSize = 12.sp,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModeButton("1 Being", gameMode == GameMode.SINGLE_PLAYER) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Max),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            ModeButton("1 Being", gameMode == GameMode.SINGLE_PLAYER, Modifier.weight(1f).fillMaxHeight()) {
                 onModeSelected(GameMode.SINGLE_PLAYER)
             }
-            ModeButton("2 Beings", gameMode == GameMode.TWO_PLAYER) {
+            ModeButton("2 Beings", gameMode == GameMode.TWO_PLAYER, Modifier.weight(1f).fillMaxHeight()) {
                 onModeSelected(GameMode.TWO_PLAYER)
             }
-            ModeButton("Distant", gameMode == GameMode.BLUETOOTH) {
+            ModeButton("Distant", gameMode == GameMode.BLUETOOTH, Modifier.weight(1f).fillMaxHeight()) {
                 onModeSelected(GameMode.BLUETOOTH)
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+
+        // Creature picker — lower being
+        Text(
+            if (gameMode == GameMode.TWO_PLAYER) "Lower being:" else "Select your being:",
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(6.dp))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CreaturePickerItem(
+                drawableRes = R.drawable.sp_pong_player,
+                selected = selectedCreature == R.drawable.sp_pong_player,
+                onClick = { onSelectCreature(R.drawable.sp_pong_player) },
+            )
+            CreaturePickerItem(
+                drawableRes = R.drawable.sp_pong_cat,
+                selected = selectedCreature == R.drawable.sp_pong_cat,
+                onClick = { onSelectCreature(R.drawable.sp_pong_cat) },
+            )
+            CreaturePickerItem(
+                drawableRes = R.drawable.sp_pong_dog,
+                selected = selectedCreature == R.drawable.sp_pong_dog,
+                onClick = { onSelectCreature(R.drawable.sp_pong_dog) },
+            )
+        }
+
+        // Upper being picker (2-player only)
+        if (gameMode == GameMode.TWO_PLAYER) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Upper being:",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CreaturePickerItem(
+                    drawableRes = R.drawable.sp_pong_player,
+                    selected = selectedPlayer2Creature == R.drawable.sp_pong_player,
+                    onClick = { onSelectPlayer2Creature(R.drawable.sp_pong_player) },
+                )
+                CreaturePickerItem(
+                    drawableRes = R.drawable.sp_pong_cat,
+                    selected = selectedPlayer2Creature == R.drawable.sp_pong_cat,
+                    onClick = { onSelectPlayer2Creature(R.drawable.sp_pong_cat) },
+                )
+                CreaturePickerItem(
+                    drawableRes = R.drawable.sp_pong_dog,
+                    selected = selectedPlayer2Creature == R.drawable.sp_pong_dog,
+                    onClick = { onSelectPlayer2Creature(R.drawable.sp_pong_dog) },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Configure button
+        Text(
+            text = "Configure Parameters",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
+                .clickable { onConfigure() }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+
+        Spacer(Modifier.height(14.dp))
 
         if (gameMode == GameMode.BLUETOOTH) {
             BluetoothLobby(
@@ -641,22 +934,50 @@ private fun BluetoothLobby(
 private fun ModeButton(
     label: String,
     selected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val bgColor = if (selected) SoftPink else Color.White.copy(alpha = 0.15f)
     val textColor = if (selected) Color.White else Color.White.copy(alpha = 0.6f)
 
-    Text(
-        text = label,
-        color = textColor,
-        fontSize = 13.sp,
-        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
+    Box(
+        modifier = modifier
             .background(bgColor, RoundedCornerShape(10.dp))
             .clickable { onClick() }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    )
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun CreaturePickerItem(
+    drawableRes: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val borderColor = if (selected) AlienPink else Color.White.copy(alpha = 0.15f)
+    Box(
+        modifier = Modifier
+            .size(60.dp)
+            .background(borderColor.copy(alpha = 0.3f), CircleShape)
+            .clickable { onClick() }
+            .padding(4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(id = drawableRes),
+            contentDescription = "Select being",
+            modifier = Modifier.size(48.dp),
+        )
+    }
 }
 
 @Composable
@@ -675,6 +996,140 @@ private fun LobbyButton(
             .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 10.dp),
     )
+}
+
+// ─── Settings Modal ─────────────────────────────────────────────────────────
+
+@Composable
+private fun SettingsModal(
+    settings: PongSettings,
+    onSoundToggle: (Boolean) -> Unit,
+    onSayingsToggle: (Boolean) -> Unit,
+    onDifficulty: (DifficultyLevel) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Scrim
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable { onDismiss() },
+    )
+
+    Column(
+        modifier = modifier
+            .widthIn(max = 280.dp)
+            .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
+            .padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "Adjustment\nParameters",
+            color = AlienPink,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        // Sound toggle
+        SettingsToggleRow(
+            label = "Acoustic Feedback",
+            checked = settings.soundEnabled,
+            onCheckedChange = onSoundToggle,
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // Sayings toggle
+        SettingsToggleRow(
+            label = "Verbal Commentary",
+            checked = settings.showSayings,
+            onCheckedChange = onSayingsToggle,
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        // Difficulty presets
+        Text(
+            "Sphere Intensity:",
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            DifficultyLevel.entries.forEach { level ->
+                val selected = settings.difficulty == level
+                Text(
+                    text = level.label,
+                    color = if (selected) Color.White else Color.White.copy(alpha = 0.5f),
+                    fontSize = 14.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (selected) SoftPink else Color.White.copy(alpha = 0.08f),
+                            RoundedCornerShape(10.dp),
+                        )
+                        .clickable { onDifficulty(level) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Dismiss button
+        Text(
+            text = "Configuration Satisfactory",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .background(AlienPink.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                .clickable { onDismiss() }
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+        )
+    }
+}
+
+@Composable
+private fun SettingsToggleRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = 0.8f),
+            fontSize = 14.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = AlienPink,
+                checkedTrackColor = SoftPink.copy(alpha = 0.4f),
+                uncheckedThumbColor = Color.White.copy(alpha = 0.4f),
+                uncheckedTrackColor = Color.White.copy(alpha = 0.1f),
+            ),
+        )
+    }
 }
 
 // ─── Game Over Overlay ───────────────────────────────────────────────────────

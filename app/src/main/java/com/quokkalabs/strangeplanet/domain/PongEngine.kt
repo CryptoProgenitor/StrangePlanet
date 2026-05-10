@@ -121,6 +121,7 @@ class PongEngine(
             GamePhase.PLAYING -> updatePlaying(state, playerTouchX, player2TouchX)
             GamePhase.POINT_SCORED -> updatePointPause(state)
             GamePhase.GAME_OVER -> state
+            GamePhase.PAUSED -> state
         }
     }
 
