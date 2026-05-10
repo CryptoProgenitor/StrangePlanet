@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.StrangePlanetApp
+import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.PongGameState
 import com.quokkalabs.strangeplanet.domain.PongEngine
@@ -25,8 +26,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     val gameState: StateFlow<PongGameState> = _gameState.asStateFlow()
 
     private var playerTouchX: Float? = null
-    private var lastPlayerHit = false
-    private var lastAiHit = false
+    private var player2TouchX: Float? = null
 
     fun initGame(screenWidth: Float, screenHeight: Float) {
         if (engine != null) return
@@ -40,7 +40,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                 delay(16)
                 val e = engine ?: continue
                 val prevState = _gameState.value
-                _gameState.update { e.update(it, playerTouchX) }
+                _gameState.update { e.update(it, playerTouchX, player2TouchX) }
 
                 val newState = _gameState.value
                 if (newState.playerHitPulse > prevState.playerHitPulse) {
@@ -53,8 +53,22 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun onTouch(x: Float) {
-        playerTouchX = x
+    fun onTouch(x: Float, y: Float) {
+        val state = _gameState.value
+        if (state.gameMode == GameMode.TWO_PLAYER) {
+            if (y < state.screenHeight / 2f) {
+                player2TouchX = x
+            } else {
+                playerTouchX = x
+            }
+        } else {
+            playerTouchX = x
+        }
+    }
+
+    fun selectMode(mode: GameMode) {
+        val e = engine ?: return
+        _gameState.value = e.createInitialState(mode)
     }
 
     fun onTapToStart() {
@@ -63,7 +77,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         when (state.phase) {
             GamePhase.READY -> _gameState.value = e.startServe(state)
             GamePhase.GAME_OVER -> {
-                _gameState.value = e.reset()
+                _gameState.value = e.reset(state.gameMode)
                 _gameState.value = e.startServe(_gameState.value)
             }
             else -> {}

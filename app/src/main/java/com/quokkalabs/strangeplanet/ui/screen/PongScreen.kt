@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quokkalabs.strangeplanet.R
+import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.GameSide
 import com.quokkalabs.strangeplanet.data.model.PongGameState
@@ -64,7 +65,7 @@ fun PongScreen(
                 viewModel.initGame(screenWidth, screenHeight)
             }
 
-            // Touch handler
+            // Touch handler (multi-touch for 2-player)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -72,14 +73,15 @@ fun PongScreen(
                         awaitPointerEventScope {
                             while (true) {
                                 val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: continue
-                                if (change.pressed) {
-                                    viewModel.onTouch(change.position.x)
-                                    if (state.phase == GamePhase.READY || state.phase == GamePhase.GAME_OVER) {
-                                        viewModel.onTapToStart()
+                                event.changes.forEach { change ->
+                                    if (change.pressed) {
+                                        viewModel.onTouch(change.position.x, change.position.y)
+                                        if (state.phase == GamePhase.READY || state.phase == GamePhase.GAME_OVER) {
+                                            viewModel.onTapToStart()
+                                        }
                                     }
+                                    change.consume()
                                 }
-                                change.consume()
                             }
                         }
                     },
@@ -129,11 +131,16 @@ fun PongScreen(
 
                 // Phase overlays
                 when (state.phase) {
-                    GamePhase.READY -> ReadyOverlay(Modifier.align(Alignment.Center))
+                    GamePhase.READY -> ReadyOverlay(
+                        gameMode = state.gameMode,
+                        onModeSelected = { viewModel.selectMode(it) },
+                        modifier = Modifier.align(Alignment.Center),
+                    )
                     GamePhase.GAME_OVER -> GameOverOverlay(
                         playerWon = state.playerScore > state.aiScore,
                         playerScore = state.playerScore,
                         aiScore = state.aiScore,
+                        gameMode = state.gameMode,
                         modifier = Modifier.align(Alignment.Center),
                     )
                     else -> {}
@@ -302,7 +309,11 @@ private fun SayingOverlay(
 }
 
 @Composable
-private fun ReadyOverlay(modifier: Modifier = Modifier) {
+private fun ReadyOverlay(
+    gameMode: GameMode,
+    onModeSelected: (GameMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .background(DeepNavy.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
@@ -316,6 +327,31 @@ private fun ReadyOverlay(modifier: Modifier = Modifier) {
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
+        Spacer(Modifier.height(20.dp))
+
+        // Mode selector
+        Text(
+            "Select participants:",
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        androidx.compose.foundation.layout.Row(
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+        ) {
+            ModeButton(
+                label = "1 Being",
+                selected = gameMode == GameMode.SINGLE_PLAYER,
+                onClick = { onModeSelected(GameMode.SINGLE_PLAYER) },
+            )
+            ModeButton(
+                label = "2 Beings",
+                selected = gameMode == GameMode.TWO_PLAYER,
+                onClick = { onModeSelected(GameMode.TWO_PLAYER) },
+            )
+        }
+
         Spacer(Modifier.height(16.dp))
         Text(
             "Tap to commence",
@@ -326,10 +362,43 @@ private fun ReadyOverlay(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun ModeButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val bgColor = if (selected) SoftPink else Color.White.copy(alpha = 0.15f)
+    val textColor = if (selected) Color.White else Color.White.copy(alpha = 0.6f)
+
+    Text(
+        text = label,
+        color = textColor,
+        fontSize = 14.sp,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        modifier = Modifier
+            .background(bgColor, RoundedCornerShape(10.dp))
+            .padding(horizontal = 20.dp, vertical = 10.dp)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: continue
+                        if (change.pressed) {
+                            onClick()
+                        }
+                        change.consume()
+                    }
+                }
+            },
+    )
+}
+
+@Composable
 private fun GameOverOverlay(
     playerWon: Boolean,
     playerScore: Int,
     aiScore: Int,
+    gameMode: GameMode,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -347,8 +416,13 @@ private fun GameOverOverlay(
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            if (playerWon) "You have achieved\nsphere deflection supremacy!"
-            else "Your opponent's implement\ntechnique proved superior.",
+            if (gameMode == GameMode.TWO_PLAYER) {
+                if (playerWon) "The lower being has achieved\nsphere deflection supremacy!"
+                else "The upper being's implement\ntechnique proved superior!"
+            } else {
+                if (playerWon) "You have achieved\nsphere deflection supremacy!"
+                else "Your opponent's implement\ntechnique proved superior."
+            },
             color = Color.White.copy(alpha = 0.8f),
             fontSize = 15.sp,
             textAlign = TextAlign.Center,

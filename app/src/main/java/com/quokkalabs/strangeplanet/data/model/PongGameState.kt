@@ -8,6 +8,10 @@ enum class GameSide {
     PLAYER, AI
 }
 
+enum class GameMode {
+    SINGLE_PLAYER, TWO_PLAYER
+}
+
 data class BallTrailPoint(val x: Float, val y: Float)
 
 data class PongGameState(
@@ -34,4 +38,5 @@ data class PongGameState(
     val activeSaying: Pair<GameSide, String>? = null,
     val screenWidth: Float = 0f,
     val screenHeight: Float = 0f,
+    val gameMode: GameMode = GameMode.SINGLE_PLAYER,
 )

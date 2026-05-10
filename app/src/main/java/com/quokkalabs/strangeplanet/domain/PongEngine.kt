@@ -1,6 +1,7 @@
 package com.quokkalabs.strangeplanet.domain
 
 import com.quokkalabs.strangeplanet.data.model.BallTrailPoint
+import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.GameSide
 import com.quokkalabs.strangeplanet.data.model.PongGameState
@@ -52,7 +53,22 @@ class PongEngine(
         "Neither implement yields! Fascinating!",
     )
 
-    fun createInitialState(): PongGameState = PongGameState(
+    // 2-player sayings (neutral, no "I" perspective)
+    private val twoPlayerBottomScoreSayings = listOf(
+        "The lower being has executed a superior trajectory!",
+        "The ground-adjacent being scores!",
+        "The upper being's implement was inadequately positioned!",
+        "The lower being demonstrates deflection prowess!",
+    )
+
+    private val twoPlayerTopScoreSayings = listOf(
+        "The upper being has calculated correctly!",
+        "The sky-adjacent being's technique prevails!",
+        "The lower being failed to intercept!",
+        "The upper being achieves sphere superiority!",
+    )
+
+    fun createInitialState(gameMode: GameMode = GameMode.SINGLE_PLAYER): PongGameState = PongGameState(
         ballX = screenWidth / 2f,
         ballY = screenHeight / 2f,
         playerPaddleX = screenWidth / 2f,
@@ -64,13 +80,18 @@ class PongEngine(
         ballRadius = ballRadius,
         screenWidth = screenWidth,
         screenHeight = screenHeight,
+        gameMode = gameMode,
     )
 
-    fun update(state: PongGameState, playerTouchX: Float?): PongGameState {
+    fun update(
+        state: PongGameState,
+        playerTouchX: Float?,
+        player2TouchX: Float? = null,
+    ): PongGameState {
         return when (state.phase) {
             GamePhase.READY -> state
             GamePhase.SERVING -> serve(state)
-            GamePhase.PLAYING -> updatePlaying(state, playerTouchX)
+            GamePhase.PLAYING -> updatePlaying(state, playerTouchX, player2TouchX)
             GamePhase.POINT_SCORED -> updatePointPause(state)
             GamePhase.GAME_OVER -> state
         }
@@ -79,7 +100,8 @@ class PongEngine(
     fun startServe(state: PongGameState): PongGameState =
         state.copy(phase = GamePhase.SERVING)
 
-    fun reset(): PongGameState = createInitialState()
+    fun reset(gameMode: GameMode = GameMode.SINGLE_PLAYER): PongGameState =
+        createInitialState(gameMode)
 
     private fun serve(state: PongGameState): PongGameState {
         val fromBottom = state.lastScorer != GameSide.PLAYER
@@ -101,7 +123,11 @@ class PongEngine(
         )
     }
 
-    private fun updatePlaying(state: PongGameState, playerTouchX: Float?): PongGameState {
+    private fun updatePlaying(
+        state: PongGameState,
+        playerTouchX: Float?,
+        player2TouchX: Float? = null,
+    ): PongGameState {
         val halfPaddle = paddleWidth / 2f
 
         // Player paddle follows touch
@@ -111,10 +137,19 @@ class PongEngine(
             state.playerPaddleX
         }
 
-        // AI tracks ball with lag
-        val aiTarget = state.ballX + (Math.random().toFloat() - 0.5f) * paddleWidth * 0.15f
-        val newAiX = (state.aiPaddleX + (aiTarget - state.aiPaddleX) * aiTrackingFactor)
-            .coerceIn(halfPaddle, screenWidth - halfPaddle)
+        // Top paddle: AI in single player, player 2 touch in two player
+        val newAiX = if (state.gameMode == GameMode.TWO_PLAYER) {
+            if (player2TouchX != null) {
+                player2TouchX.coerceIn(halfPaddle, screenWidth - halfPaddle)
+            } else {
+                state.aiPaddleX
+            }
+        } else {
+            // AI tracks ball with lag
+            val aiTarget = state.ballX + (Math.random().toFloat() - 0.5f) * paddleWidth * 0.15f
+            (state.aiPaddleX + (aiTarget - state.aiPaddleX) * aiTrackingFactor)
+                .coerceIn(halfPaddle, screenWidth - halfPaddle)
+        }
 
         // Move ball
         var bx = state.ballX + state.ballVx
@@ -205,10 +240,18 @@ class PongEngine(
         val pScore = if (scorer == GameSide.PLAYER) state.playerScore + 1 else state.playerScore
         val aScore = if (scorer == GameSide.AI) state.aiScore + 1 else state.aiScore
 
-        val saying = if (scorer == GameSide.PLAYER) {
-            GameSide.PLAYER to playerScoreSayings.random()
+        val saying = if (state.gameMode == GameMode.TWO_PLAYER) {
+            if (scorer == GameSide.PLAYER) {
+                GameSide.PLAYER to twoPlayerBottomScoreSayings.random()
+            } else {
+                GameSide.AI to twoPlayerTopScoreSayings.random()
+            }
         } else {
-            GameSide.AI to aiScoreSayings.random()
+            if (scorer == GameSide.PLAYER) {
+                GameSide.PLAYER to playerScoreSayings.random()
+            } else {
+                GameSide.AI to aiScoreSayings.random()
+            }
         }
 
         val phase = if (pScore >= WIN_SCORE || aScore >= WIN_SCORE) {
