@@ -34,6 +34,7 @@ import com.quokkalabs.strangeplanet.ui.viewmodel.StrangePlanetViewModel
 fun InteractiveScreen(
     viewModel: StrangePlanetViewModel,
     onOpenSettings: () -> Unit = {},
+    onOpenGame: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val density = LocalDensity.current
@@ -124,6 +125,21 @@ fun InteractiveScreen(
                 }
             }
 
+            // Game button
+            FloatingActionButton(
+                onClick = onOpenGame,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(bottom = navBarPadding + 16.dp, start = 16.dp)
+                    .size(48.dp),
+                shape = CircleShape,
+                containerColor = AlienPink.copy(alpha = 0.7f),
+                contentColor = DeepNavy,
+            ) {
+                Text("🏓", fontSize = 20.sp)
+            }
+
+            // Settings button
             FloatingActionButton(
                 onClick = onOpenSettings,
                 modifier = Modifier

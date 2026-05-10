@@ -10,9 +10,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quokkalabs.strangeplanet.ui.screen.InteractiveScreen
+import com.quokkalabs.strangeplanet.ui.screen.PongScreen
 import com.quokkalabs.strangeplanet.ui.screen.SettingsScreen
 import com.quokkalabs.strangeplanet.ui.theme.StrangePlanetTheme
+import com.quokkalabs.strangeplanet.ui.viewmodel.PongViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.StrangePlanetViewModel
+
+private enum class Screen {
+    INTERACTIVE, SETTINGS, PONG
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,18 +28,25 @@ class MainActivity : ComponentActivity() {
         setContent {
             StrangePlanetTheme {
                 val viewModel: StrangePlanetViewModel = viewModel()
-                var showSettings by rememberSaveable { mutableStateOf(false) }
+                var screen by rememberSaveable { mutableStateOf(Screen.INTERACTIVE) }
 
-                if (showSettings) {
-                    SettingsScreen(
+                when (screen) {
+                    Screen.INTERACTIVE -> InteractiveScreen(
                         viewModel = viewModel,
-                        onBack = { showSettings = false },
+                        onOpenSettings = { screen = Screen.SETTINGS },
+                        onOpenGame = { screen = Screen.PONG },
                     )
-                } else {
-                    InteractiveScreen(
+                    Screen.SETTINGS -> SettingsScreen(
                         viewModel = viewModel,
-                        onOpenSettings = { showSettings = true },
+                        onBack = { screen = Screen.INTERACTIVE },
                     )
+                    Screen.PONG -> {
+                        val pongViewModel: PongViewModel = viewModel()
+                        PongScreen(
+                            viewModel = pongViewModel,
+                            onBack = { screen = Screen.INTERACTIVE },
+                        )
+                    }
                 }
             }
         }
