@@ -1,6 +1,7 @@
 package com.quokkalabs.strangeplanet.domain
 
 import com.quokkalabs.strangeplanet.data.model.BallTrailPoint
+import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.GameSide
@@ -13,6 +14,7 @@ import kotlin.math.sin
 class PongEngine(
     private val screenWidth: Float,
     private val screenHeight: Float,
+    private val difficulty: DifficultyLevel = DifficultyLevel.STANDARD,
 ) {
     companion object {
         private const val TRAIL_LENGTH = 10
@@ -23,14 +25,39 @@ class PongEngine(
 
     val playerPaddleY = screenHeight * 0.85f
     val aiPaddleY = screenHeight * 0.15f
-    val paddleWidth = screenWidth * 0.25f
     val paddleHeight = screenHeight * 0.012f
     val ballRadius = screenWidth * 0.025f
 
-    private val ballBaseSpeed = screenHeight * 0.009f
-    private val ballMaxSpeed = screenHeight * 0.018f
-    private val speedRampPerHit = screenHeight * 0.0004f
-    private val aiTrackingFactor = 0.045f
+    val paddleWidth = screenWidth * when (difficulty) {
+        DifficultyLevel.GENTLE -> 0.30f
+        DifficultyLevel.STANDARD -> 0.25f
+        DifficultyLevel.AGGRESSIVE -> 0.18f
+    }
+
+    private val ballBaseSpeed = screenHeight * when (difficulty) {
+        DifficultyLevel.GENTLE -> 0.007f
+        DifficultyLevel.STANDARD -> 0.009f
+        DifficultyLevel.AGGRESSIVE -> 0.012f
+    }
+
+    private val ballMaxSpeed = screenHeight * when (difficulty) {
+        DifficultyLevel.GENTLE -> 0.013f
+        DifficultyLevel.STANDARD -> 0.018f
+        DifficultyLevel.AGGRESSIVE -> 0.024f
+    }
+
+    private val speedRampPerHit = screenHeight * when (difficulty) {
+        DifficultyLevel.GENTLE -> 0.0002f
+        DifficultyLevel.STANDARD -> 0.0004f
+        DifficultyLevel.AGGRESSIVE -> 0.0007f
+    }
+
+    private val aiTrackingFactor = when (difficulty) {
+        DifficultyLevel.GENTLE -> 0.030f
+        DifficultyLevel.STANDARD -> 0.045f
+        DifficultyLevel.AGGRESSIVE -> 0.070f
+    }
+
     private val maxDeflection = MAX_DEFLECTION_DEG * PI.toFloat() / 180f
 
     private val playerScoreSayings = listOf(
@@ -137,8 +164,8 @@ class PongEngine(
             state.playerPaddleX
         }
 
-        // Top paddle: AI in single player, player 2 touch in two player
-        val newAiX = if (state.gameMode == GameMode.TWO_PLAYER) {
+        // Top paddle: AI in single player, player 2 touch in multiplayer
+        val newAiX = if (state.gameMode != GameMode.SINGLE_PLAYER) {
             if (player2TouchX != null) {
                 player2TouchX.coerceIn(halfPaddle, screenWidth - halfPaddle)
             } else {
@@ -160,14 +187,17 @@ class PongEngine(
         var playerPulse = (state.playerHitPulse - 0.05f).coerceAtLeast(0f)
         var aiPulse = (state.aiHitPulse - 0.05f).coerceAtLeast(0f)
         var saying = state.activeSaying
+        var wallBounced = false
 
         // Wall bounce
         if (bx - ballRadius < 0f) {
             bx = ballRadius
             vx = abs(vx)
+            wallBounced = true
         } else if (bx + ballRadius > screenWidth) {
             bx = screenWidth - ballRadius
             vx = -abs(vx)
+            wallBounced = true
         }
 
         // Player paddle collision
@@ -233,6 +263,7 @@ class PongEngine(
             aiHitPulse = aiPulse,
             trail = trail,
             activeSaying = saying,
+            wallBounced = wallBounced,
         )
     }
 
@@ -240,7 +271,7 @@ class PongEngine(
         val pScore = if (scorer == GameSide.PLAYER) state.playerScore + 1 else state.playerScore
         val aScore = if (scorer == GameSide.AI) state.aiScore + 1 else state.aiScore
 
-        val saying = if (state.gameMode == GameMode.TWO_PLAYER) {
+        val saying = if (state.gameMode != GameMode.SINGLE_PLAYER) {
             if (scorer == GameSide.PLAYER) {
                 GameSide.PLAYER to twoPlayerBottomScoreSayings.random()
             } else {

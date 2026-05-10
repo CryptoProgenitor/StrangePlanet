@@ -1,19 +1,31 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +49,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quokkalabs.strangeplanet.R
+import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
+import com.quokkalabs.strangeplanet.data.model.BtConnectionState
 import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.GameSide
@@ -54,7 +68,15 @@ fun PongScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.gameState.collectAsState()
+    val btState by viewModel.btState.collectAsState()
     val density = LocalDensity.current
+
+    // Bluetooth permission launcher
+    val btPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        viewModel.updateBtPermissions(results.values.all { it })
+    }
 
     CosmicBackground(showStars = true) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -65,7 +87,7 @@ fun PongScreen(
                 viewModel.initGame(screenWidth, screenHeight)
             }
 
-            // Touch handler (multi-touch for 2-player)
+            // Touch handler (multi-touch for 2-player / BT)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -134,8 +156,31 @@ fun PongScreen(
                     GamePhase.READY -> ReadyOverlay(
                         gameMode = state.gameMode,
                         onModeSelected = { viewModel.selectMode(it) },
+                        btState = btState,
+                        onBtHost = { viewModel.btHost() },
+                        onBtScan = { viewModel.btScan() },
+                        onBtStopScan = { viewModel.btStopScan() },
+                        onBtConnect = { viewModel.btConnect(it) },
+                        onBtDisconnect = { viewModel.btDisconnect() },
+                        onRequestBtPermissions = {
+                            val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                arrayOf(
+                                    Manifest.permission.BLUETOOTH_CONNECT,
+                                    Manifest.permission.BLUETOOTH_SCAN,
+                                    Manifest.permission.BLUETOOTH_ADVERTISE,
+                                )
+                            } else {
+                                arrayOf(
+                                    Manifest.permission.BLUETOOTH,
+                                    Manifest.permission.BLUETOOTH_ADMIN,
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                )
+                            }
+                            btPermissionLauncher.launch(perms)
+                        },
                         modifier = Modifier.align(Alignment.Center),
                     )
+
                     GamePhase.GAME_OVER -> GameOverOverlay(
                         playerWon = state.playerScore > state.aiScore,
                         playerScore = state.playerScore,
@@ -143,7 +188,20 @@ fun PongScreen(
                         gameMode = state.gameMode,
                         modifier = Modifier.align(Alignment.Center),
                     )
-                    else -> {}
+
+                    else -> {
+                        // Show disconnect warning during gameplay
+                        if (state.gameMode == GameMode.BLUETOOTH &&
+                            btState.connectionState != BtConnectionState.CONNECTED
+                        ) {
+                            SayingOverlay(
+                                text = "Frequency link lost!",
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .offset(y = (-60).dp),
+                            )
+                        }
+                    }
                 }
 
                 // Back button
@@ -163,6 +221,8 @@ fun PongScreen(
         }
     }
 }
+
+// ─── Game Canvas ─────────────────────────────────────────────────────────────
 
 @Composable
 private fun GameCanvas(state: PongGameState) {
@@ -194,7 +254,7 @@ private fun GameCanvas(state: PongGameState) {
             )
         }
 
-        // Ball glow
+        // Ball glow + body
         if (state.phase == GamePhase.PLAYING || state.phase == GamePhase.POINT_SCORED) {
             drawCircle(
                 brush = Brush.radialGradient(
@@ -209,8 +269,6 @@ private fun GameCanvas(state: PongGameState) {
                 radius = state.ballRadius * 3.5f,
                 center = Offset(state.ballX, state.ballY),
             )
-
-            // Ball body
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(AlienPink, SoftPink),
@@ -228,8 +286,9 @@ private fun GameCanvas(state: PongGameState) {
         // Player paddle bar
         val pColor = if (state.playerHitPulse > 0f) {
             lerp(CardPink, Color.White, state.playerHitPulse * 0.5f)
-        } else CardPink
-
+        } else {
+            CardPink
+        }
         drawRoundRect(
             color = pColor,
             topLeft = Offset(
@@ -243,8 +302,9 @@ private fun GameCanvas(state: PongGameState) {
         // AI paddle bar
         val aColor = if (state.aiHitPulse > 0f) {
             lerp(CardPink, Color.White, state.aiHitPulse * 0.5f)
-        } else CardPink
-
+        } else {
+            CardPink
+        }
         drawRoundRect(
             color = aColor,
             topLeft = Offset(
@@ -256,6 +316,8 @@ private fun GameCanvas(state: PongGameState) {
         )
     }
 }
+
+// ─── Creature Sprite ─────────────────────────────────────────────────────────
 
 @Composable
 private fun PongCreature(
@@ -291,6 +353,8 @@ private fun PongCreature(
     )
 }
 
+// ─── Saying Overlay ──────────────────────────────────────────────────────────
+
 @Composable
 private fun SayingOverlay(
     text: String,
@@ -308,16 +372,28 @@ private fun SayingOverlay(
     )
 }
 
+// ─── Ready Overlay ───────────────────────────────────────────────────────────
+
 @Composable
 private fun ReadyOverlay(
     gameMode: GameMode,
     onModeSelected: (GameMode) -> Unit,
+    btState: BluetoothLobbyState,
+    onBtHost: () -> Unit,
+    onBtScan: () -> Unit,
+    onBtStopScan: () -> Unit,
+    onBtConnect: (String) -> Unit,
+    onBtDisconnect: () -> Unit,
+    onRequestBtPermissions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
+            .widthIn(max = 300.dp)
+            .heightIn(max = 520.dp)
             .background(DeepNavy.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
-            .padding(36.dp),
+            .padding(28.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -327,7 +403,7 @@ private fun ReadyOverlay(
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(18.dp))
 
         // Mode selector
         Text(
@@ -337,29 +413,229 @@ private fun ReadyOverlay(
         )
         Spacer(Modifier.height(8.dp))
 
-        androidx.compose.foundation.layout.Row(
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
-        ) {
-            ModeButton(
-                label = "1 Being",
-                selected = gameMode == GameMode.SINGLE_PLAYER,
-                onClick = { onModeSelected(GameMode.SINGLE_PLAYER) },
-            )
-            ModeButton(
-                label = "2 Beings",
-                selected = gameMode == GameMode.TWO_PLAYER,
-                onClick = { onModeSelected(GameMode.TWO_PLAYER) },
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModeButton("1 Being", gameMode == GameMode.SINGLE_PLAYER) {
+                onModeSelected(GameMode.SINGLE_PLAYER)
+            }
+            ModeButton("2 Beings", gameMode == GameMode.TWO_PLAYER) {
+                onModeSelected(GameMode.TWO_PLAYER)
+            }
+            ModeButton("Distant", gameMode == GameMode.BLUETOOTH) {
+                onModeSelected(GameMode.BLUETOOTH)
+            }
         }
 
         Spacer(Modifier.height(16.dp))
-        Text(
-            "Tap to commence",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 15.sp,
-        )
+
+        if (gameMode == GameMode.BLUETOOTH) {
+            BluetoothLobby(
+                btState = btState,
+                onHost = onBtHost,
+                onScan = onBtScan,
+                onStopScan = onBtStopScan,
+                onConnect = onBtConnect,
+                onDisconnect = onBtDisconnect,
+                onRequestPermissions = onRequestBtPermissions,
+            )
+        } else {
+            Text(
+                "Tap to commence",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 15.sp,
+            )
+        }
     }
 }
+
+// ─── Bluetooth Lobby ─────────────────────────────────────────────────────────
+
+@Composable
+private fun BluetoothLobby(
+    btState: BluetoothLobbyState,
+    onHost: () -> Unit,
+    onScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onRequestPermissions: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        when {
+            !btState.available -> {
+                Text(
+                    "This device lacks\nfrequency transmission hardware.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            !btState.permissionsGranted -> {
+                Text(
+                    "Frequency access\nauthorization required.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(10.dp))
+                LobbyButton("Grant Access") { onRequestPermissions() }
+            }
+
+            !btState.enabled -> {
+                Text(
+                    "Activate your frequency\ntransmitter in device settings.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            else -> when (btState.connectionState) {
+                BtConnectionState.IDLE -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LobbyButton("Broadcast\nPresence") { onHost() }
+                        LobbyButton("Detect\nBeings") { onScan() }
+                    }
+
+                    // Paired devices
+                    if (btState.pairedDevices.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Known Beings:",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        btState.pairedDevices.forEach { device ->
+                            Text(
+                                text = device.name,
+                                color = SoftPink,
+                                fontSize = 13.sp,
+                                modifier = Modifier
+                                    .clickable { onConnect(device.address) }
+                                    .background(
+                                        Color.White.copy(alpha = 0.08f),
+                                        RoundedCornerShape(8.dp),
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
+                }
+
+                BtConnectionState.HOSTING -> {
+                    Text(
+                        "Broadcasting presence...\nAwaiting distant being...",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    LobbyButton("Cancel") { onDisconnect() }
+                }
+
+                BtConnectionState.SCANNING -> {
+                    Text(
+                        "Scanning for beings...",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+
+                    // Discovered devices
+                    btState.discoveredDevices.forEach { device ->
+                        Text(
+                            text = device.name,
+                            color = AlienPink,
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .clickable { onConnect(device.address) }
+                                .background(
+                                    Color.White.copy(alpha = 0.08f),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                    }
+
+                    // Paired devices
+                    if (btState.pairedDevices.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Known Beings:",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        btState.pairedDevices.forEach { device ->
+                            Text(
+                                text = device.name,
+                                color = SoftPink.copy(alpha = 0.7f),
+                                fontSize = 13.sp,
+                                modifier = Modifier
+                                    .clickable { onConnect(device.address) }
+                                    .background(
+                                        Color.White.copy(alpha = 0.05f),
+                                        RoundedCornerShape(8.dp),
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    LobbyButton("Stop") { onStopScan() }
+                }
+
+                BtConnectionState.CONNECTING -> {
+                    Text(
+                        "Establishing\nfrequency link...",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+
+                BtConnectionState.CONNECTED -> {
+                    Text(
+                        "Frequency link established!",
+                        color = SoftPink,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                    )
+                    btState.connectedDeviceName?.let { name ->
+                        Text(
+                            "Connected to: $name",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Tap to commence",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 15.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ─── Mode & Lobby Buttons ────────────────────────────────────────────────────
 
 @Composable
 private fun ModeButton(
@@ -373,25 +649,35 @@ private fun ModeButton(
     Text(
         text = label,
         color = textColor,
-        fontSize = 14.sp,
+        fontSize = 13.sp,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+        textAlign = TextAlign.Center,
         modifier = Modifier
             .background(bgColor, RoundedCornerShape(10.dp))
-            .padding(horizontal = 20.dp, vertical = 10.dp)
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull() ?: continue
-                        if (change.pressed) {
-                            onClick()
-                        }
-                        change.consume()
-                    }
-                }
-            },
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
     )
 }
+
+@Composable
+private fun LobbyButton(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        color = Color.White,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .background(SoftPink.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    )
+}
+
+// ─── Game Over Overlay ───────────────────────────────────────────────────────
 
 @Composable
 private fun GameOverOverlay(
@@ -416,12 +702,21 @@ private fun GameOverOverlay(
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            if (gameMode == GameMode.TWO_PLAYER) {
-                if (playerWon) "The lower being has achieved\nsphere deflection supremacy!"
-                else "The upper being's implement\ntechnique proved superior!"
-            } else {
-                if (playerWon) "You have achieved\nsphere deflection supremacy!"
-                else "Your opponent's implement\ntechnique proved superior."
+            when (gameMode) {
+                GameMode.SINGLE_PLAYER -> {
+                    if (playerWon) "You have achieved\nsphere deflection supremacy!"
+                    else "Your opponent's implement\ntechnique proved superior."
+                }
+
+                GameMode.TWO_PLAYER -> {
+                    if (playerWon) "The lower being has achieved\nsphere deflection supremacy!"
+                    else "The upper being's implement\ntechnique proved superior!"
+                }
+
+                GameMode.BLUETOOTH -> {
+                    if (playerWon) "You have achieved\nsphere deflection supremacy!"
+                    else "The distant being's implement\ntechnique proved superior!"
+                }
             },
             color = Color.White.copy(alpha = 0.8f),
             fontSize = 15.sp,
