@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -619,13 +620,14 @@ private fun ReadyOverlay(
     onOnlineDisconnect: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val scrollState = rememberScrollState()
     Column(
         modifier = modifier
             .widthIn(max = 300.dp)
             .fillMaxHeight(0.85f)
             .background(DeepNavy.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
             .padding(24.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(scrollState),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -646,21 +648,33 @@ private fun ReadyOverlay(
         Spacer(Modifier.height(6.dp))
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Max),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ModeButton("1 Being", gameMode == GameMode.SINGLE_PLAYER, Modifier.weight(1f).fillMaxHeight()) {
+            ModeButton("1 Being", gameMode == GameMode.SINGLE_PLAYER, Modifier.weight(1f)) {
                 onModeSelected(GameMode.SINGLE_PLAYER)
             }
-            ModeButton("2 Beings", gameMode == GameMode.TWO_PLAYER, Modifier.weight(1f).fillMaxHeight()) {
+            ModeButton("2 Beings", gameMode == GameMode.TWO_PLAYER, Modifier.weight(1f)) {
                 onModeSelected(GameMode.TWO_PLAYER)
             }
-            ModeButton("Nearby", gameMode == GameMode.BLUETOOTH, Modifier.weight(1f).fillMaxHeight()) {
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Multiplayer:",
+            color = Color.White.copy(alpha = 0.35f),
+            fontSize = 11.sp,
+        )
+        Spacer(Modifier.height(4.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ModeButton("📡 Nearby", gameMode == GameMode.BLUETOOTH, Modifier.weight(1f)) {
                 onModeSelected(GameMode.BLUETOOTH)
             }
-            ModeButton("Remote", gameMode == GameMode.ONLINE, Modifier.weight(1f).fillMaxHeight()) {
+            ModeButton("🌐 Remote", gameMode == GameMode.ONLINE, Modifier.weight(1f)) {
                 onModeSelected(GameMode.ONLINE)
             }
         }
@@ -794,6 +808,7 @@ private fun ReadyOverlay(
                     onCreate = onOnlineCreate,
                     onJoin = onOnlineJoin,
                     onDisconnect = onOnlineDisconnect,
+                    scrollState = scrollState,
                 )
             }
             else -> {
@@ -1029,9 +1044,17 @@ private fun OnlineLobby(
     onCreate: () -> Unit,
     onJoin: (String) -> Unit,
     onDisconnect: () -> Unit,
+    scrollState: ScrollState? = null,
 ) {
     var joinCode by remember { mutableStateOf("") }
     var showJoinInput by remember { mutableStateOf(false) }
+
+    // Auto-scroll to show keyboard when join input appears
+    LaunchedEffect(showJoinInput) {
+        if (showJoinInput && scrollState != null) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),

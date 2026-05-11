@@ -66,6 +66,11 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     // Client-side trail accumulation
     private val clientTrail = ArrayDeque<BallTrailPoint>()
 
+    // Client-side smoothing for online mode (hides 15Hz Firebase jank)
+    private var smoothBallX = 0f
+    private var smoothBallY = 0f
+    private var smoothAiPaddleX = 0f
+
     fun initGame(screenWidth: Float, screenHeight: Float) {
         if (engine != null) return
 
@@ -161,7 +166,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     val prevState = _gameState.value
-                    _gameState.update { e.update(it, playerTouchX, p2Touch) }
+                    val lagFrames = if (mode == GameMode.ONLINE && mpRole == BtRole.HOST) 10 else 0
+                    _gameState.update { e.update(it, playerTouchX, p2Touch, lagFrames) }
 
                     val newState = _gameState.value
                     val soundOn = _pongSettings.value.soundEnabled
@@ -217,13 +223,44 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         // Client sees flipped perspective
         val localBallX = net.ballX * sw
         val localBallY = (1f - net.ballY) * sh
+        val localAiPaddleX = net.hostPaddleX * sw
 
         val phase = GamePhase.entries.getOrElse(net.phaseOrdinal) { GamePhase.READY }
 
-        // Build trail on client side
+        // Smooth ball and opponent paddle for online mode to hide 15Hz jank
+        val displayBallX: Float
+        val displayBallY: Float
+        val displayAiPaddleX: Float
+        if (mode == GameMode.ONLINE && (phase == GamePhase.PLAYING || phase == GamePhase.POINT_SCORED)) {
+            smoothBallX += (localBallX - smoothBallX) * 0.35f
+            smoothBallY += (localBallY - smoothBallY) * 0.35f
+            smoothAiPaddleX += (localAiPaddleX - smoothAiPaddleX) * 0.3f
+            displayBallX = smoothBallX
+            displayBallY = smoothBallY
+            displayAiPaddleX = smoothAiPaddleX
+        } else {
+            // Snap for BT mode or non-playing phases
+            smoothBallX = localBallX
+            smoothBallY = localBallY
+            smoothAiPaddleX = localAiPaddleX
+            displayBallX = localBallX
+            displayBallY = localBallY
+            displayAiPaddleX = localAiPaddleX
+        }
+
+        // Build trail on client side (movement-gated to prevent clustering)
         if (phase == GamePhase.PLAYING || phase == GamePhase.POINT_SCORED) {
-            clientTrail.addFirst(BallTrailPoint(localBallX, localBallY))
-            while (clientTrail.size > 10) clientTrail.removeLast()
+            val last = clientTrail.firstOrNull()
+            if (last == null) {
+                clientTrail.addFirst(BallTrailPoint(displayBallX, displayBallY))
+            } else {
+                val dx = displayBallX - last.x
+                val dy = displayBallY - last.y
+                if (dx * dx + dy * dy > 1f) {
+                    clientTrail.addFirst(BallTrailPoint(displayBallX, displayBallY))
+                    while (clientTrail.size > 10) clientTrail.removeLast()
+                }
+            }
         } else {
             clientTrail.clear()
         }
@@ -238,12 +275,12 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
         val prevState = _gameState.value
         _gameState.value = PongGameState(
-            ballX = localBallX,
-            ballY = localBallY,
+            ballX = displayBallX,
+            ballY = displayBallY,
             playerPaddleX = playerTouchX?.coerceIn(eng.paddleWidth / 2f, sw - eng.paddleWidth / 2f)
                 ?: (net.clientPaddleX * sw),
             playerPaddleY = eng.playerPaddleY,
-            aiPaddleX = net.hostPaddleX * sw,
+            aiPaddleX = displayAiPaddleX,
             aiPaddleY = eng.aiPaddleY,
             paddleWidth = eng.paddleWidth,
             paddleHeight = eng.paddleHeight,
@@ -308,6 +345,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         }
         _gameState.value = e.createInitialState(mode)
         clientTrail.clear()
+        smoothBallX = 0f
+        smoothBallY = 0f
+        smoothAiPaddleX = 0f
     }
 
     // ---- Settings ----
@@ -548,6 +588,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         val e = engine ?: return
         _gameState.value = e.createInitialState()
         clientTrail.clear()
+        smoothBallX = 0f
+        smoothBallY = 0f
+        smoothAiPaddleX = 0f
     }
 
     // ---- Pause ----

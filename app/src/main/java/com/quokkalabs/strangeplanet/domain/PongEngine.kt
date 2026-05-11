@@ -114,11 +114,12 @@ class PongEngine(
         state: PongGameState,
         playerTouchX: Float?,
         player2TouchX: Float? = null,
+        remotePaddleLagFrames: Int = 0,
     ): PongGameState {
         return when (state.phase) {
             GamePhase.READY -> state
             GamePhase.SERVING -> serve(state)
-            GamePhase.PLAYING -> updatePlaying(state, playerTouchX, player2TouchX)
+            GamePhase.PLAYING -> updatePlaying(state, playerTouchX, player2TouchX, remotePaddleLagFrames)
             GamePhase.POINT_SCORED -> updatePointPause(state)
             GamePhase.GAME_OVER -> state
             GamePhase.PAUSED -> state
@@ -155,6 +156,7 @@ class PongEngine(
         state: PongGameState,
         playerTouchX: Float?,
         player2TouchX: Float? = null,
+        remotePaddleLagFrames: Int = 0,
     ): PongGameState {
         val halfPaddle = paddleWidth / 2f
 
@@ -223,9 +225,14 @@ class PongEngine(
             }
         }
 
-        // AI paddle collision
+        // AI paddle collision (with lag compensation for online multiplayer)
+        val lagBuffer = if (remotePaddleLagFrames > 0) {
+            remotePaddleLagFrames * abs(state.ballVy).coerceAtLeast(ballBaseSpeed * 0.3f)
+        } else {
+            0f
+        }
         if (vy < 0 && by - ballRadius <= aiPaddleY + paddleHeight &&
-            state.ballY - ballRadius > aiPaddleY + paddleHeight
+            state.ballY - ballRadius > aiPaddleY + paddleHeight - lagBuffer
         ) {
             if (bx >= newAiX - halfPaddle - ballRadius &&
                 bx <= newAiX + halfPaddle + ballRadius
