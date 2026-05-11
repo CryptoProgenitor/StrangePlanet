@@ -37,6 +37,8 @@ class BluetoothPongManager(private val context: Context) {
         const val MSG_TOUCH: Byte = 2
         const val MSG_CONTROL: Byte = 3
         const val CTRL_TAP_START: Byte = 1
+        const val CTRL_QUIT: Byte = 2
+        const val CTRL_PAUSE: Byte = 3
     }
 
     /** Normalized game state sent over the wire. */
@@ -53,6 +55,8 @@ class BluetoothPongManager(private val context: Context) {
         val rally: Int,
         val sayingSide: Int,   // -1 = none, 0 = host scored, 1 = client scored
         val sayingText: String,
+        val hostCreatureIdx: Int = 0,
+        val clientCreatureIdx: Int = 0,
     )
 
     private val bluetoothManager =
@@ -72,6 +76,9 @@ class BluetoothPongManager(private val context: Context) {
 
     private val _connectedDeviceName = MutableStateFlow<String?>(null)
     val connectedDeviceName: StateFlow<String?> = _connectedDeviceName.asStateFlow()
+
+    private val _connectedDeviceAddress = MutableStateFlow<String?>(null)
+    val connectedDeviceAddress: StateFlow<String?> = _connectedDeviceAddress.asStateFlow()
 
     /** For host: latest normalized touch-X from the remote client. */
     private val _remoteTouchX = MutableStateFlow<Float?>(null)
@@ -180,6 +187,11 @@ class BluetoothPongManager(private val context: Context) {
                     } catch (_: SecurityException) {
                         null
                     } ?: "Unknown Being"
+                    _connectedDeviceAddress.value = try {
+                        s.remoteDevice?.address
+                    } catch (_: SecurityException) {
+                        null
+                    }
                     setupStreams(s)
                     _connectionState.value = BtConnectionState.CONNECTED
                     startReadLoop()
@@ -243,6 +255,7 @@ class BluetoothPongManager(private val context: Context) {
                     } catch (_: SecurityException) {
                         null
                     } ?: "Unknown Being"
+                    _connectedDeviceAddress.value = address
                     setupStreams(s)
                     _connectionState.value = BtConnectionState.CONNECTED
                     startReadLoop()
@@ -256,7 +269,7 @@ class BluetoothPongManager(private val context: Context) {
 
     // ---- data send ----
 
-    fun sendGameState(state: PongGameState) {
+    fun sendGameState(state: PongGameState, hostCreatureIdx: Int = 0, clientCreatureIdx: Int = 0) {
         val out = dataOut ?: return
         val sw = state.screenWidth
         val sh = state.screenHeight
@@ -283,6 +296,8 @@ class BluetoothPongManager(private val context: Context) {
                     out.writeInt(-1)
                     out.writeUTF("")
                 }
+                out.writeByte(hostCreatureIdx)
+                out.writeByte(clientCreatureIdx)
                 out.flush()
             }
         } catch (e: IOException) {
@@ -344,6 +359,7 @@ class BluetoothPongManager(private val context: Context) {
         _remoteGameState.value = null
         _remoteControl.value = null
         _connectedDeviceName.value = null
+        _connectedDeviceAddress.value = null
     }
 
     fun cleanup() {
@@ -380,6 +396,8 @@ class BluetoothPongManager(private val context: Context) {
                                 rally = input.readInt(),
                                 sayingSide = input.readInt(),
                                 sayingText = input.readUTF(),
+                                hostCreatureIdx = input.readByte().toInt(),
+                                clientCreatureIdx = input.readByte().toInt(),
                             )
                         }
 

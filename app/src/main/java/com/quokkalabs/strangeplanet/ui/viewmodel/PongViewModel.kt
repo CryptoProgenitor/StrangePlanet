@@ -1,6 +1,7 @@
 package com.quokkalabs.strangeplanet.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.R
@@ -9,6 +10,7 @@ import com.quokkalabs.strangeplanet.bluetooth.BluetoothPongManager
 import com.quokkalabs.strangeplanet.data.model.BallTrailPoint
 import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
 import com.quokkalabs.strangeplanet.data.model.BtConnectionState
+import com.quokkalabs.strangeplanet.data.model.BtDeviceInfo
 import com.quokkalabs.strangeplanet.data.model.BtRole
 import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.GameMode
@@ -75,6 +77,14 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (btRole == BtRole.CLIENT && btConnected) {
                     // ---- CLIENT MODE ----
+                    // Check for host quit signal
+                    val ctrl = bt.remoteControl.value
+                    if (ctrl == BluetoothPongManager.CTRL_QUIT) {
+                        bt.clearControl()
+                        handleRemoteQuit()
+                        continue
+                    }
+
                     val netState = bt.remoteGameState.value
                     if (netState != null) {
                         updateClientState(netState, e)
@@ -91,12 +101,19 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         player2TouchX
                     }
 
-                    // Check for remote control (client's tap-to-start)
+                    // Check for remote control (client's tap-to-start or quit)
                     if (btRole == BtRole.HOST && btConnected) {
                         val ctrl = bt?.remoteControl?.value
                         if (ctrl == BluetoothPongManager.CTRL_TAP_START) {
                             bt?.clearControl()
                             handleTapToStart()
+                        } else if (ctrl == BluetoothPongManager.CTRL_QUIT) {
+                            bt?.clearControl()
+                            handleRemoteQuit()
+                            continue
+                        } else if (ctrl == BluetoothPongManager.CTRL_PAUSE) {
+                            bt?.clearControl()
+                            togglePause()
                         }
                     }
 
@@ -124,9 +141,11 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         pongSound.playScore()
                     }
 
-                    // Host: broadcast state to client
+                    // Host: broadcast state to client (includes creature selection)
                     if (btRole == BtRole.HOST && btConnected) {
-                        bt?.sendGameState(newState)
+                        val hostIdx = allCreatures.indexOf(_playerCreature.value).coerceAtLeast(0)
+                        val clientIdx = allCreatures.indexOf(_player2Creature.value).coerceAtLeast(0)
+                        bt?.sendGameState(newState, hostIdx, clientIdx)
                     }
                 }
             }
@@ -140,6 +159,12 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         val sw = _gameState.value.screenWidth
         val sh = _gameState.value.screenHeight
         if (sw <= 0f || sh <= 0f) return
+
+        // Sync creatures from host's selection
+        val newPlayerCreature = allCreatures.getOrElse(net.clientCreatureIdx) { R.drawable.sp_pong_player }
+        val newOpponentCreature = allCreatures.getOrElse(net.hostCreatureIdx) { R.drawable.sp_pong_cat }
+        if (_playerCreature.value != newPlayerCreature) _playerCreature.value = newPlayerCreature
+        if (_player2Creature.value != newOpponentCreature) _player2Creature.value = newOpponentCreature
 
         // Client sees flipped perspective
         val localBallX = net.ballX * sw
@@ -167,7 +192,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         _gameState.value = PongGameState(
             ballX = localBallX,
             ballY = localBallY,
-            playerPaddleX = net.clientPaddleX * sw,
+            playerPaddleX = playerTouchX?.coerceIn(eng.paddleWidth / 2f, sw - eng.paddleWidth / 2f)
+                ?: (net.clientPaddleX * sw),
             playerPaddleY = eng.playerPaddleY,
             aiPaddleX = net.hostPaddleX * sw,
             aiPaddleY = eng.aiPaddleY,
@@ -255,6 +281,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         _btState.value = BluetoothLobbyState(
             available = bt.isAvailable,
             enabled = bt.isEnabled,
+            lastConnectedDevice = loadLastBtDevice(),
         )
         if (bt.isAvailable && bt.isEnabled) {
             bt.loadPairedDevices()
@@ -269,6 +296,15 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             bt.connectionState.collect { conn ->
                 _btState.update { it.copy(connectionState = conn) }
+                if (conn == BtConnectionState.CONNECTED) {
+                    val name = bt.connectedDeviceName.value ?: "Unknown Being"
+                    val address = bt.connectedDeviceAddress.value
+                    if (address != null) {
+                        val device = BtDeviceInfo(name, address)
+                        saveLastBtDevice(device)
+                        _btState.update { it.copy(lastConnectedDevice = device) }
+                    }
+                }
             }
         }
         viewModelScope.launch {
@@ -309,6 +345,26 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         _btState.value = BluetoothLobbyState()
     }
 
+    /** Local player quits mid-game in BT mode — notify remote, then clean up. */
+    fun quitBtGame() {
+        btManager?.sendControl(BluetoothPongManager.CTRL_QUIT)
+        btManager?.cleanup()
+        _btState.value = BluetoothLobbyState()
+        resetGame()
+    }
+
+    /** Remote player quit — end the game and tear down BT. */
+    private fun handleRemoteQuit() {
+        _gameState.update { state ->
+            state.copy(
+                phase = GamePhase.GAME_OVER,
+                activeSaying = GameSide.AI to "The distant being has departed!",
+            )
+        }
+        btManager?.cleanup()
+        _btState.value = BluetoothLobbyState()
+    }
+
     fun updateBtPermissions(granted: Boolean) {
         _btState.update { it.copy(permissionsGranted = granted) }
         if (granted) {
@@ -316,6 +372,25 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             _btState.update { it.copy(enabled = bt.isEnabled) }
             if (bt.isEnabled) bt.loadPairedDevices()
         }
+    }
+
+    // ---- Last BT device persistence ----
+
+    private fun saveLastBtDevice(device: BtDeviceInfo) {
+        getApplication<Application>()
+            .getSharedPreferences("pong_bt", Context.MODE_PRIVATE)
+            .edit()
+            .putString("last_bt_name", device.name)
+            .putString("last_bt_address", device.address)
+            .apply()
+    }
+
+    private fun loadLastBtDevice(): BtDeviceInfo? {
+        val prefs = getApplication<Application>()
+            .getSharedPreferences("pong_bt", Context.MODE_PRIVATE)
+        val name = prefs.getString("last_bt_name", null) ?: return null
+        val address = prefs.getString("last_bt_address", null) ?: return null
+        return BtDeviceInfo(name, address)
     }
 
     // ---- Creature selection ----
@@ -329,10 +404,17 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     fun selectCreature(resId: Int) {
         _playerCreature.value = resId
         _opponentCreature.value = allCreatures.filter { it != resId }.random()
+        // Embargo: if player2 had the same, reassign
+        if (_player2Creature.value == resId) {
+            _player2Creature.value = allCreatures.first { it != resId }
+        }
     }
 
     fun selectPlayer2Creature(resId: Int) {
-        _player2Creature.value = resId
+        // Embargo: can't pick same as player 1
+        if (resId != _playerCreature.value) {
+            _player2Creature.value = resId
+        }
     }
 
     // ---- Reset ----
@@ -352,6 +434,18 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                 GamePhase.PAUSED -> state.copy(phase = GamePhase.PLAYING)
                 else -> state
             }
+        }
+    }
+
+    /** Pause/unpause with BT sync — client signals host, host toggles authoritatively. */
+    fun requestPause() {
+        togglePause()
+        val bt = btManager
+        if (_gameState.value.gameMode == GameMode.BLUETOOTH &&
+            bt?.connectionState?.value == BtConnectionState.CONNECTED &&
+            bt.role == BtRole.CLIENT
+        ) {
+            bt.sendControl(BluetoothPongManager.CTRL_PAUSE)
         }
     }
 

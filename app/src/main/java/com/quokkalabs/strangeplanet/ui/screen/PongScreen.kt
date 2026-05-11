@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.sp
 import com.quokkalabs.strangeplanet.R
 import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
 import com.quokkalabs.strangeplanet.data.model.BtConnectionState
+import com.quokkalabs.strangeplanet.data.model.BtRole
 import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
@@ -153,7 +154,7 @@ fun PongScreen(
                 GameCanvas(state = state)
 
                 // Top creature (AI / player 2)
-                val topCreature = if (state.gameMode == GameMode.TWO_PLAYER) player2Creature else opponentCreature
+                val topCreature = if (state.gameMode == GameMode.SINGLE_PLAYER) opponentCreature else player2Creature
                 PongCreature(
                     drawableRes = topCreature,
                     paddleX = state.aiPaddleX,
@@ -171,39 +172,36 @@ fun PongScreen(
                     hitPulse = state.playerHitPulse,
                 )
 
-                // Score
-                Column(
+                // Score with creature icons
+                Row(
                     modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    // "them" label for BT
-                    if (state.gameMode == GameMode.BLUETOOTH) {
-                        Text(
-                            "them",
-                            color = Color.White.copy(alpha = 0.30f),
-                            fontSize = 11.sp,
-                        )
-                    }
-
-                    val scoreText = when (state.gameMode) {
-                        GameMode.TWO_PLAYER -> "↑${state.aiScore}  —  ${state.playerScore}↓"
-                        else -> "${state.aiScore}  —  ${state.playerScore}"
-                    }
+                    // Top player's creature icon (left side)
+                    Image(
+                        painter = painterResource(id = topCreature),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .graphicsLayer { alpha = 0.35f },
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        text = scoreText,
+                        text = "${state.aiScore}  —  ${state.playerScore}",
                         color = Color.White.copy(alpha = 0.25f),
                         fontSize = 44.sp,
                         fontWeight = FontWeight.Bold,
                     )
-
-                    // "me" label for BT
-                    if (state.gameMode == GameMode.BLUETOOTH) {
-                        Text(
-                            "me",
-                            color = Color.White.copy(alpha = 0.30f),
-                            fontSize = 11.sp,
-                        )
-                    }
+                    Spacer(Modifier.width(6.dp))
+                    // Bottom player's creature icon (right side)
+                    Image(
+                        painter = painterResource(id = playerCreature),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .graphicsLayer { alpha = 0.35f },
+                    )
                 }
 
                 // Active saying (gated by settings)
@@ -294,7 +292,7 @@ fun PongScreen(
                                         SoftPink.copy(alpha = 0.6f),
                                         RoundedCornerShape(12.dp),
                                     )
-                                    .clickable { viewModel.togglePause() }
+                                    .clickable { viewModel.requestPause() }
                                     .padding(horizontal = 24.dp, vertical = 12.dp),
                             )
                         }
@@ -318,7 +316,7 @@ fun PongScreen(
                 // Pause button (top-right, during gameplay)
                 if (state.phase == GamePhase.PLAYING) {
                     FloatingActionButton(
-                        onClick = { viewModel.togglePause() },
+                        onClick = { viewModel.requestPause() },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(top = 24.dp, end = 12.dp)
@@ -336,9 +334,10 @@ fun PongScreen(
                     onClick = {
                         val phase = state.phase
                         if (phase == GamePhase.READY || phase == GamePhase.GAME_OVER) {
+                            if (state.gameMode == GameMode.BLUETOOTH) viewModel.btDisconnect()
                             viewModel.resetGame(); onBack()
                         } else {
-                            if (phase == GamePhase.PLAYING) viewModel.togglePause()
+                            if (phase == GamePhase.PLAYING) viewModel.requestPause()
                             showExitConfirm = true
                         }
                     },
@@ -391,7 +390,15 @@ fun PongScreen(
                             textAlign = TextAlign.Center,
                             modifier = Modifier
                                 .background(AlienPink.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-                                .clickable { showExitConfirm = false; viewModel.resetGame(); onBack() }
+                                .clickable {
+                                    showExitConfirm = false
+                                    if (state.gameMode == GameMode.BLUETOOTH) {
+                                        viewModel.quitBtGame()
+                                    } else {
+                                        viewModel.resetGame()
+                                    }
+                                    onBack()
+                                }
                                 .padding(horizontal = 20.dp, vertical = 12.dp),
                         )
                         Spacer(Modifier.height(10.dp))
@@ -403,7 +410,7 @@ fun PongScreen(
                             textAlign = TextAlign.Center,
                             modifier = Modifier
                                 .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                                .clickable { showExitConfirm = false; viewModel.togglePause() }
+                                .clickable { showExitConfirm = false; viewModel.requestPause() }
                                 .padding(horizontal = 20.dp, vertical = 10.dp),
                         )
                     }
@@ -600,7 +607,7 @@ private fun ReadyOverlay(
     Column(
         modifier = modifier
             .widthIn(max = 300.dp)
-            .heightIn(max = 560.dp)
+            .fillMaxHeight(0.85f)
             .background(DeepNavy.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
             .padding(24.dp)
             .verticalScroll(rememberScrollState()),
@@ -642,40 +649,24 @@ private fun ReadyOverlay(
 
         Spacer(Modifier.height(12.dp))
 
-        // Creature picker — lower being
-        Text(
-            if (gameMode == GameMode.TWO_PLAYER) "Lower being:" else "Select your being:",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 12.sp,
-        )
-        Spacer(Modifier.height(6.dp))
+        // Creature picker(s)
+        val isBtClient = gameMode == GameMode.BLUETOOTH &&
+            btState.role == BtRole.CLIENT &&
+            btState.connectionState == BtConnectionState.CONNECTED
+        val showSecondPicker = gameMode == GameMode.TWO_PLAYER ||
+            (gameMode == GameMode.BLUETOOTH && !isBtClient)
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CreaturePickerItem(
-                drawableRes = R.drawable.sp_pong_player,
-                selected = selectedCreature == R.drawable.sp_pong_player,
-                onClick = { onSelectCreature(R.drawable.sp_pong_player) },
-            )
-            CreaturePickerItem(
-                drawableRes = R.drawable.sp_pong_cat,
-                selected = selectedCreature == R.drawable.sp_pong_cat,
-                onClick = { onSelectCreature(R.drawable.sp_pong_cat) },
-            )
-            CreaturePickerItem(
-                drawableRes = R.drawable.sp_pong_dog,
-                selected = selectedCreature == R.drawable.sp_pong_dog,
-                onClick = { onSelectCreature(R.drawable.sp_pong_dog) },
-            )
-        }
-
-        // Upper being picker (2-player only)
-        if (gameMode == GameMode.TWO_PLAYER) {
-            Spacer(Modifier.height(8.dp))
+        if (isBtClient) {
+            // Client: host picks creatures
             Text(
-                "Upper being:",
+                "The host being\nselects creatures.",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
+        } else {
+            Text(
+                if (showSecondPicker) "Your being:" else "Select your being:",
                 color = Color.White.copy(alpha = 0.5f),
                 fontSize = 12.sp,
             )
@@ -687,19 +678,49 @@ private fun ReadyOverlay(
             ) {
                 CreaturePickerItem(
                     drawableRes = R.drawable.sp_pong_player,
-                    selected = selectedPlayer2Creature == R.drawable.sp_pong_player,
-                    onClick = { onSelectPlayer2Creature(R.drawable.sp_pong_player) },
+                    selected = selectedCreature == R.drawable.sp_pong_player,
+                    onClick = { onSelectCreature(R.drawable.sp_pong_player) },
                 )
                 CreaturePickerItem(
                     drawableRes = R.drawable.sp_pong_cat,
-                    selected = selectedPlayer2Creature == R.drawable.sp_pong_cat,
-                    onClick = { onSelectPlayer2Creature(R.drawable.sp_pong_cat) },
+                    selected = selectedCreature == R.drawable.sp_pong_cat,
+                    onClick = { onSelectCreature(R.drawable.sp_pong_cat) },
                 )
                 CreaturePickerItem(
                     drawableRes = R.drawable.sp_pong_dog,
-                    selected = selectedPlayer2Creature == R.drawable.sp_pong_dog,
-                    onClick = { onSelectPlayer2Creature(R.drawable.sp_pong_dog) },
+                    selected = selectedCreature == R.drawable.sp_pong_dog,
+                    onClick = { onSelectCreature(R.drawable.sp_pong_dog) },
                 )
+            }
+
+            // Second picker: 2-player or BT host
+            if (showSecondPicker) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (gameMode == GameMode.TWO_PLAYER) "Upper being:" else "Distant being:",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+
+                val allCreatures = listOf(
+                    R.drawable.sp_pong_player,
+                    R.drawable.sp_pong_cat,
+                    R.drawable.sp_pong_dog,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    allCreatures.forEach { res ->
+                        CreaturePickerItem(
+                            drawableRes = res,
+                            selected = selectedPlayer2Creature == res,
+                            enabled = res != selectedCreature,
+                            onClick = { onSelectPlayer2Creature(res) },
+                        )
+                    }
+                }
             }
         }
 
@@ -708,15 +729,27 @@ private fun ReadyOverlay(
         // Configure button
         Text(
             text = "Configure Parameters",
-            color = Color.White.copy(alpha = 0.6f),
+            color = Color.White.copy(alpha = if (isBtClient) 0.2f else 0.6f),
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             modifier = Modifier
-                .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
-                .clickable { onConfigure() }
+                .background(
+                    Color.White.copy(alpha = if (isBtClient) 0.04f else 0.1f),
+                    RoundedCornerShape(10.dp),
+                )
+                .then(if (!isBtClient) Modifier.clickable { onConfigure() } else Modifier)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         )
+        if (isBtClient) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Parameters governed\nby host being.",
+                color = Color.White.copy(alpha = 0.3f),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
 
         Spacer(Modifier.height(14.dp))
 
@@ -788,6 +821,32 @@ private fun BluetoothLobby(
 
             else -> when (btState.connectionState) {
                 BtConnectionState.IDLE -> {
+                    // Quick reconnect to last known opponent
+                    btState.lastConnectedDevice?.let { last ->
+                        Text(
+                            "Previously linked being:",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = last.name,
+                            color = AlienPink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier
+                                .clickable { onConnect(last.address) }
+                                .background(
+                                    AlienPink.copy(alpha = 0.15f),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         LobbyButton("Broadcast\nPresence") { onHost() }
                         LobbyButton("Detect\nBeings") { onScan() }
@@ -961,21 +1020,28 @@ private fun ModeButton(
 private fun CreaturePickerItem(
     drawableRes: Int,
     selected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (selected) AlienPink else Color.White.copy(alpha = 0.15f)
+    val borderColor = when {
+        !enabled -> Color.White.copy(alpha = 0.05f)
+        selected -> AlienPink
+        else -> Color.White.copy(alpha = 0.15f)
+    }
     Box(
         modifier = Modifier
             .size(60.dp)
             .background(borderColor.copy(alpha = 0.3f), CircleShape)
-            .clickable { onClick() }
+            .then(if (enabled) Modifier.clickable { onClick() } else Modifier)
             .padding(4.dp),
         contentAlignment = Alignment.Center,
     ) {
         Image(
             painter = painterResource(id = drawableRes),
             contentDescription = "Select being",
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier
+                .size(48.dp)
+                .graphicsLayer { alpha = if (enabled) 1f else 0.25f },
         )
     }
 }

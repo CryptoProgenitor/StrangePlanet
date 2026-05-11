@@ -31,6 +31,7 @@ data class BluetoothLobbyState(
     val discoveredDevices: List<BtDeviceInfo> = emptyList(),
     val connectedDeviceName: String? = null,
     val role: BtRole? = null,
+    val lastConnectedDevice: BtDeviceInfo? = null,
 )
 
 enum class DifficultyLevel(val label: String) {
