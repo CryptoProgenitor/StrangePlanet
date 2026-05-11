@@ -8,10 +8,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.quokkalabs.strangeplanet" />
+                  <option name="mobileSdkAppId" value="1:1060604157684:android:42456c74241e5e443cc8a1" />
+                  <option name="projectId" value="strangeplanet-8e935" />
+                  <option name="projectNumber" value="1060604157684" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

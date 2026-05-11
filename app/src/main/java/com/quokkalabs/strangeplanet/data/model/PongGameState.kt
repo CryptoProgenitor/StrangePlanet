@@ -9,7 +9,7 @@ enum class GameSide {
 }
 
 enum class GameMode {
-    SINGLE_PLAYER, TWO_PLAYER, BLUETOOTH
+    SINGLE_PLAYER, TWO_PLAYER, BLUETOOTH, ONLINE
 }
 
 enum class BtConnectionState {
@@ -21,6 +21,17 @@ enum class BtRole {
 }
 
 data class BtDeviceInfo(val name: String, val address: String)
+
+enum class OnlineConnectionState {
+    IDLE, CREATING, WAITING_FOR_PLAYER, JOINING, CONNECTED
+}
+
+data class OnlineLobbyState(
+    val connectionState: OnlineConnectionState = OnlineConnectionState.IDLE,
+    val roomCode: String? = null,
+    val connectedPlayerName: String? = null,
+    val role: BtRole? = null,
+)
 
 data class BluetoothLobbyState(
     val available: Boolean = false,

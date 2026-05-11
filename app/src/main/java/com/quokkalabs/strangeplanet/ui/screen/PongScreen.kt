@@ -69,6 +69,8 @@ import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.GameSide
+import com.quokkalabs.strangeplanet.data.model.OnlineConnectionState
+import com.quokkalabs.strangeplanet.data.model.OnlineLobbyState
 import com.quokkalabs.strangeplanet.data.model.PongGameState
 import com.quokkalabs.strangeplanet.data.model.PongSettings
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
@@ -85,6 +87,7 @@ fun PongScreen(
 ) {
     val state by viewModel.gameState.collectAsState()
     val btState by viewModel.btState.collectAsState()
+    val onlineState by viewModel.onlineState.collectAsState()
     val settings by viewModel.pongSettings.collectAsState()
     val playerCreature by viewModel.playerCreature.collectAsState()
     val opponentCreature by viewModel.opponentCreature.collectAsState()
@@ -251,6 +254,10 @@ fun PongScreen(
                             }
                             btPermissionLauncher.launch(perms)
                         },
+                        onlineState = onlineState,
+                        onOnlineCreate = { viewModel.onlineCreateRoom() },
+                        onOnlineJoin = { viewModel.onlineJoinRoom(it) },
+                        onOnlineDisconnect = { viewModel.onlineDisconnect() },
                         modifier = Modifier.align(Alignment.Center),
                     )
 
@@ -300,9 +307,12 @@ fun PongScreen(
 
                     else -> {
                         // Show disconnect warning during gameplay
-                        if (state.gameMode == GameMode.BLUETOOTH &&
-                            btState.connectionState != BtConnectionState.CONNECTED
-                        ) {
+                        val showDisconnect = when (state.gameMode) {
+                            GameMode.BLUETOOTH -> btState.connectionState != BtConnectionState.CONNECTED
+                            GameMode.ONLINE -> onlineState.connectionState != OnlineConnectionState.CONNECTED
+                            else -> false
+                        }
+                        if (showDisconnect) {
                             SayingOverlay(
                                 text = "Frequency link lost!",
                                 modifier = Modifier
@@ -335,6 +345,7 @@ fun PongScreen(
                         val phase = state.phase
                         if (phase == GamePhase.READY || phase == GamePhase.GAME_OVER) {
                             if (state.gameMode == GameMode.BLUETOOTH) viewModel.btDisconnect()
+                            if (state.gameMode == GameMode.ONLINE) viewModel.onlineDisconnect()
                             viewModel.resetGame(); onBack()
                         } else {
                             if (phase == GamePhase.PLAYING) viewModel.requestPause()
@@ -392,10 +403,10 @@ fun PongScreen(
                                 .background(AlienPink.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
                                 .clickable {
                                     showExitConfirm = false
-                                    if (state.gameMode == GameMode.BLUETOOTH) {
-                                        viewModel.quitBtGame()
-                                    } else {
-                                        viewModel.resetGame()
+                                    when (state.gameMode) {
+                                        GameMode.BLUETOOTH -> viewModel.quitBtGame()
+                                        GameMode.ONLINE -> viewModel.quitOnlineGame()
+                                        else -> viewModel.resetGame()
                                     }
                                     onBack()
                                 }
@@ -602,6 +613,10 @@ private fun ReadyOverlay(
     onBtConnect: (String) -> Unit,
     onBtDisconnect: () -> Unit,
     onRequestBtPermissions: () -> Unit,
+    onlineState: OnlineLobbyState = OnlineLobbyState(),
+    onOnlineCreate: () -> Unit = {},
+    onOnlineJoin: (String) -> Unit = {},
+    onOnlineDisconnect: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -634,7 +649,7 @@ private fun ReadyOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(IntrinsicSize.Max),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             ModeButton("1 Being", gameMode == GameMode.SINGLE_PLAYER, Modifier.weight(1f).fillMaxHeight()) {
                 onModeSelected(GameMode.SINGLE_PLAYER)
@@ -642,8 +657,11 @@ private fun ReadyOverlay(
             ModeButton("2 Beings", gameMode == GameMode.TWO_PLAYER, Modifier.weight(1f).fillMaxHeight()) {
                 onModeSelected(GameMode.TWO_PLAYER)
             }
-            ModeButton("Distant", gameMode == GameMode.BLUETOOTH, Modifier.weight(1f).fillMaxHeight()) {
+            ModeButton("Nearby", gameMode == GameMode.BLUETOOTH, Modifier.weight(1f).fillMaxHeight()) {
                 onModeSelected(GameMode.BLUETOOTH)
+            }
+            ModeButton("Remote", gameMode == GameMode.ONLINE, Modifier.weight(1f).fillMaxHeight()) {
+                onModeSelected(GameMode.ONLINE)
             }
         }
 
@@ -653,10 +671,15 @@ private fun ReadyOverlay(
         val isBtClient = gameMode == GameMode.BLUETOOTH &&
             btState.role == BtRole.CLIENT &&
             btState.connectionState == BtConnectionState.CONNECTED
+        val isOnlineClient = gameMode == GameMode.ONLINE &&
+            onlineState.role == BtRole.CLIENT &&
+            onlineState.connectionState == OnlineConnectionState.CONNECTED
+        val isRemoteClient = isBtClient || isOnlineClient
         val showSecondPicker = gameMode == GameMode.TWO_PLAYER ||
-            (gameMode == GameMode.BLUETOOTH && !isBtClient)
+            (gameMode == GameMode.BLUETOOTH && !isBtClient) ||
+            (gameMode == GameMode.ONLINE && !isOnlineClient)
 
-        if (isBtClient) {
+        if (isRemoteClient) {
             // Client: host picks creatures
             Text(
                 "The host being\nselects creatures.",
@@ -729,19 +752,19 @@ private fun ReadyOverlay(
         // Configure button
         Text(
             text = "Configure Parameters",
-            color = Color.White.copy(alpha = if (isBtClient) 0.2f else 0.6f),
+            color = Color.White.copy(alpha = if (isRemoteClient) 0.2f else 0.6f),
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .background(
-                    Color.White.copy(alpha = if (isBtClient) 0.04f else 0.1f),
+                    Color.White.copy(alpha = if (isRemoteClient) 0.04f else 0.1f),
                     RoundedCornerShape(10.dp),
                 )
-                .then(if (!isBtClient) Modifier.clickable { onConfigure() } else Modifier)
+                .then(if (!isRemoteClient) Modifier.clickable { onConfigure() } else Modifier)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         )
-        if (isBtClient) {
+        if (isRemoteClient) {
             Spacer(Modifier.height(4.dp))
             Text(
                 "Parameters governed\nby host being.",
@@ -753,22 +776,33 @@ private fun ReadyOverlay(
 
         Spacer(Modifier.height(14.dp))
 
-        if (gameMode == GameMode.BLUETOOTH) {
-            BluetoothLobby(
-                btState = btState,
-                onHost = onBtHost,
-                onScan = onBtScan,
-                onStopScan = onBtStopScan,
-                onConnect = onBtConnect,
-                onDisconnect = onBtDisconnect,
-                onRequestPermissions = onRequestBtPermissions,
-            )
-        } else {
-            Text(
-                "Tap to commence",
-                color = Color.White.copy(alpha = 0.6f),
-                fontSize = 15.sp,
-            )
+        when (gameMode) {
+            GameMode.BLUETOOTH -> {
+                BluetoothLobby(
+                    btState = btState,
+                    onHost = onBtHost,
+                    onScan = onBtScan,
+                    onStopScan = onBtStopScan,
+                    onConnect = onBtConnect,
+                    onDisconnect = onBtDisconnect,
+                    onRequestPermissions = onRequestBtPermissions,
+                )
+            }
+            GameMode.ONLINE -> {
+                OnlineLobby(
+                    onlineState = onlineState,
+                    onCreate = onOnlineCreate,
+                    onJoin = onOnlineJoin,
+                    onDisconnect = onOnlineDisconnect,
+                )
+            }
+            else -> {
+                Text(
+                    "Tap to commence",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 15.sp,
+                )
+            }
         }
     }
 }
@@ -986,6 +1020,251 @@ private fun BluetoothLobby(
         }
     }
 }
+
+// ─── Online Lobby ───────────────────────────────────────────────────────────
+
+@Composable
+private fun OnlineLobby(
+    onlineState: OnlineLobbyState,
+    onCreate: () -> Unit,
+    onJoin: (String) -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    var joinCode by remember { mutableStateOf("") }
+    var showJoinInput by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        when (onlineState.connectionState) {
+            OnlineConnectionState.IDLE -> {
+                Text(
+                    "Connect across\nthe entire planet.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(10.dp))
+
+                if (!showJoinInput) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LobbyButton("Create\nRoom") { onCreate() }
+                        LobbyButton("Join\nRoom") { showJoinInput = true }
+                    }
+                } else {
+                    Text(
+                        "Enter room code:",
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+
+                    // Simple 4-character code input
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        repeat(CODE_LENGTH) { idx ->
+                            val char = joinCode.getOrNull(idx)?.toString() ?: ""
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(
+                                        Color.White.copy(alpha = 0.1f),
+                                        RoundedCornerShape(8.dp),
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = char,
+                                    color = AlienPink,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+
+                    // Letter buttons (keyboard)
+                    val letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+                    letters.chunked(8).forEach { row ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        ) {
+                            row.forEach { letter ->
+                                Text(
+                                    text = letter.toString(),
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .background(
+                                            Color.White.copy(alpha = 0.12f),
+                                            RoundedCornerShape(4.dp),
+                                        )
+                                        .clickable {
+                                            if (joinCode.length < CODE_LENGTH) {
+                                                joinCode += letter
+                                            }
+                                        }
+                                        .padding(top = 4.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Clear",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 12.sp,
+                            modifier = Modifier
+                                .background(
+                                    Color.White.copy(alpha = 0.08f),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .clickable { joinCode = "" }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                        if (joinCode.length == CODE_LENGTH) {
+                            Text(
+                                text = "Connect",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .background(
+                                        SoftPink.copy(alpha = 0.7f),
+                                        RoundedCornerShape(8.dp),
+                                    )
+                                    .clickable { onJoin(joinCode) }
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Back",
+                        color = Color.White.copy(alpha = 0.4f),
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .clickable { showJoinInput = false; joinCode = "" }
+                            .padding(4.dp),
+                    )
+                }
+            }
+
+            OnlineConnectionState.CREATING -> {
+                Text(
+                    "Creating frequency room...",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            OnlineConnectionState.WAITING_FOR_PLAYER -> {
+                Text(
+                    "Room established!",
+                    color = SoftPink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Transmit this code\nto the distant being:",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+
+                // Big room code display
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    (onlineState.roomCode ?: "").forEach { ch ->
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(
+                                    AlienPink.copy(alpha = 0.2f),
+                                    RoundedCornerShape(10.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = ch.toString(),
+                                color = AlienPink,
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Awaiting distant being...",
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                LobbyButton("Cancel") { onDisconnect() }
+            }
+
+            OnlineConnectionState.JOINING -> {
+                Text(
+                    "Joining frequency room...",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            OnlineConnectionState.CONNECTED -> {
+                Text(
+                    "Planetary link established!",
+                    color = SoftPink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                )
+                onlineState.connectedPlayerName?.let { name ->
+                    Text(
+                        "Connected to: $name",
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 12.sp,
+                    )
+                }
+                onlineState.roomCode?.let { code ->
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Room: $code",
+                        color = Color.White.copy(alpha = 0.3f),
+                        fontSize = 11.sp,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Tap to commence",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 15.sp,
+                )
+            }
+        }
+    }
+}
+
+private const val CODE_LENGTH = 4
 
 // ─── Mode & Lobby Buttons ────────────────────────────────────────────────────
 
@@ -1234,7 +1513,7 @@ private fun GameOverOverlay(
                     else "The upper being's implement\ntechnique proved superior!"
                 }
 
-                GameMode.BLUETOOTH -> {
+                GameMode.BLUETOOTH, GameMode.ONLINE -> {
                     if (playerWon) "You have achieved\nsphere deflection supremacy!"
                     else "The distant being's implement\ntechnique proved superior!"
                 }

@@ -16,9 +16,12 @@ import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.GameSide
+import com.quokkalabs.strangeplanet.data.model.OnlineConnectionState
+import com.quokkalabs.strangeplanet.data.model.OnlineLobbyState
 import com.quokkalabs.strangeplanet.data.model.PongGameState
 import com.quokkalabs.strangeplanet.data.model.PongSettings
 import com.quokkalabs.strangeplanet.domain.PongEngine
+import com.quokkalabs.strangeplanet.firebase.FirebasePongManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,12 +51,17 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     private val _player2Creature = MutableStateFlow(R.drawable.sp_pong_cat)
     val player2Creature: StateFlow<Int> = _player2Creature.asStateFlow()
 
+    private val _onlineState = MutableStateFlow(OnlineLobbyState())
+    val onlineState: StateFlow<OnlineLobbyState> = _onlineState.asStateFlow()
+
     private val pongSound = PongSoundManager()
 
     private var playerTouchX: Float? = null
     private var player2TouchX: Float? = null
     private var btManager: BluetoothPongManager? = null
     private var btObserveStarted = false
+    private var firebaseManager: FirebasePongManager? = null
+    private var onlineObserveStarted = false
 
     // Client-side trail accumulation
     private val clientTrail = ArrayDeque<BallTrailPoint>()
@@ -70,50 +78,85 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                 delay(16)
                 val e = engine ?: continue
 
-                val bt = btManager
-                val btConnected =
-                    bt?.connectionState?.value == BtConnectionState.CONNECTED
-                val btRole = bt?.role
+                // Determine active multiplayer manager
+                val mode = _gameState.value.gameMode
+                val mpRole: BtRole?
+                val mpConnected: Boolean
+                val mpRemoteTouchX: Float?
+                val mpRemoteState: BluetoothPongManager.NetGameState?
+                val mpRemoteControl: Byte?
 
-                if (btRole == BtRole.CLIENT && btConnected) {
-                    // ---- CLIENT MODE ----
-                    // Check for host quit signal
-                    val ctrl = bt.remoteControl.value
-                    if (ctrl == BluetoothPongManager.CTRL_QUIT) {
-                        bt.clearControl()
-                        handleRemoteQuit()
+                when (mode) {
+                    GameMode.BLUETOOTH -> {
+                        val bt = btManager
+                        mpRole = bt?.role
+                        mpConnected = bt?.connectionState?.value == BtConnectionState.CONNECTED
+                        mpRemoteTouchX = bt?.remoteTouchX?.value
+                        mpRemoteState = bt?.remoteGameState?.value
+                        mpRemoteControl = bt?.remoteControl?.value
+                    }
+                    GameMode.ONLINE -> {
+                        val fb = firebaseManager
+                        mpRole = fb?.role
+                        mpConnected = fb?.isConnected == true
+                        mpRemoteTouchX = fb?.remoteTouchX?.value
+                        mpRemoteState = fb?.remoteGameState?.value
+                        mpRemoteControl = fb?.remoteControl?.value
+                    }
+                    else -> {
+                        mpRole = null
+                        mpConnected = false
+                        mpRemoteTouchX = null
+                        mpRemoteState = null
+                        mpRemoteControl = null
+                    }
+                }
+
+                val isMultiplayer = (mode == GameMode.BLUETOOTH || mode == GameMode.ONLINE)
+
+                if (mpRole == BtRole.CLIENT && mpConnected) {
+                    // ---- CLIENT MODE (BT or Online) ----
+                    if (mpRemoteControl == BluetoothPongManager.CTRL_QUIT) {
+                        clearMultiplayerControl(mode)
+                        handleRemoteQuit(mode)
                         continue
                     }
 
-                    val netState = bt.remoteGameState.value
-                    if (netState != null) {
-                        updateClientState(netState, e)
+                    if (mpRemoteState != null) {
+                        updateClientState(mpRemoteState, e, mode)
                     }
                     // Send local touch (normalized 0-1)
                     val sw = _gameState.value.screenWidth
                     val normX = if (sw > 0f) playerTouchX?.let { it / sw } else null
-                    bt.sendTouch(normX)
+                    when (mode) {
+                        GameMode.BLUETOOTH -> btManager?.sendTouch(normX)
+                        GameMode.ONLINE -> firebaseManager?.sendTouch(normX)
+                        else -> {}
+                    }
                 } else {
                     // ---- HOST / LOCAL MODE ----
-                    val p2Touch = if (btRole == BtRole.HOST && btConnected) {
-                        bt?.remoteTouchX?.value?.let { it * _gameState.value.screenWidth }
+                    val p2Touch = if (mpRole == BtRole.HOST && mpConnected) {
+                        mpRemoteTouchX?.let { it * _gameState.value.screenWidth }
                     } else {
                         player2TouchX
                     }
 
                     // Check for remote control (client's tap-to-start or quit)
-                    if (btRole == BtRole.HOST && btConnected) {
-                        val ctrl = bt?.remoteControl?.value
-                        if (ctrl == BluetoothPongManager.CTRL_TAP_START) {
-                            bt?.clearControl()
-                            handleTapToStart()
-                        } else if (ctrl == BluetoothPongManager.CTRL_QUIT) {
-                            bt?.clearControl()
-                            handleRemoteQuit()
-                            continue
-                        } else if (ctrl == BluetoothPongManager.CTRL_PAUSE) {
-                            bt?.clearControl()
-                            togglePause()
+                    if (mpRole == BtRole.HOST && mpConnected) {
+                        when (mpRemoteControl) {
+                            BluetoothPongManager.CTRL_TAP_START -> {
+                                clearMultiplayerControl(mode)
+                                handleTapToStart()
+                            }
+                            BluetoothPongManager.CTRL_QUIT -> {
+                                clearMultiplayerControl(mode)
+                                handleRemoteQuit(mode)
+                                continue
+                            }
+                            BluetoothPongManager.CTRL_PAUSE -> {
+                                clearMultiplayerControl(mode)
+                                togglePause()
+                            }
                         }
                     }
 
@@ -141,11 +184,15 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         pongSound.playScore()
                     }
 
-                    // Host: broadcast state to client (includes creature selection)
-                    if (btRole == BtRole.HOST && btConnected) {
+                    // Host: broadcast state to remote
+                    if (mpRole == BtRole.HOST && mpConnected) {
                         val hostIdx = allCreatures.indexOf(_playerCreature.value).coerceAtLeast(0)
                         val clientIdx = allCreatures.indexOf(_player2Creature.value).coerceAtLeast(0)
-                        bt?.sendGameState(newState, hostIdx, clientIdx)
+                        when (mode) {
+                            GameMode.BLUETOOTH -> btManager?.sendGameState(newState, hostIdx, clientIdx)
+                            GameMode.ONLINE -> firebaseManager?.sendGameState(newState, hostIdx, clientIdx)
+                            else -> {}
+                        }
                     }
                 }
             }
@@ -155,6 +202,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     private fun updateClientState(
         net: BluetoothPongManager.NetGameState,
         eng: PongEngine,
+        mode: GameMode = GameMode.BLUETOOTH,
     ) {
         val sw = _gameState.value.screenWidth
         val sh = _gameState.value.screenHeight
@@ -209,7 +257,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             trail = clientTrail.toList(),
             screenWidth = sw,
             screenHeight = sh,
-            gameMode = GameMode.BLUETOOTH,
+            gameMode = mode,
             activeSaying = saying,
         )
 
@@ -237,16 +285,26 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             GameMode.BLUETOOTH -> playerTouchX = x
+            GameMode.ONLINE -> playerTouchX = x
             else -> playerTouchX = x
         }
     }
 
     fun selectMode(mode: GameMode) {
         val e = engine ?: return
-        if (mode == GameMode.BLUETOOTH) {
-            initBluetooth()
-        } else {
-            btManager?.cleanup()
+        when (mode) {
+            GameMode.BLUETOOTH -> {
+                firebaseManager?.cleanup()
+                initBluetooth()
+            }
+            GameMode.ONLINE -> {
+                btManager?.cleanup()
+                initOnline()
+            }
+            else -> {
+                btManager?.cleanup()
+                firebaseManager?.cleanup()
+            }
         }
         _gameState.value = e.createInitialState(mode)
         clientTrail.clear()
@@ -353,16 +411,41 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         resetGame()
     }
 
-    /** Remote player quit — end the game and tear down BT. */
-    private fun handleRemoteQuit() {
+    /** Local player quits mid-game in online mode. */
+    fun quitOnlineGame() {
+        firebaseManager?.sendControl(BluetoothPongManager.CTRL_QUIT)
+        firebaseManager?.cleanup()
+        _onlineState.value = OnlineLobbyState()
+        resetGame()
+    }
+
+    /** Remote player quit — end the game and tear down. */
+    private fun handleRemoteQuit(mode: GameMode = GameMode.BLUETOOTH) {
         _gameState.update { state ->
             state.copy(
                 phase = GamePhase.GAME_OVER,
                 activeSaying = GameSide.AI to "The distant being has departed!",
             )
         }
-        btManager?.cleanup()
-        _btState.value = BluetoothLobbyState()
+        when (mode) {
+            GameMode.BLUETOOTH -> {
+                btManager?.cleanup()
+                _btState.value = BluetoothLobbyState()
+            }
+            GameMode.ONLINE -> {
+                firebaseManager?.cleanup()
+                _onlineState.value = OnlineLobbyState()
+            }
+            else -> {}
+        }
+    }
+
+    private fun clearMultiplayerControl(mode: GameMode) {
+        when (mode) {
+            GameMode.BLUETOOTH -> btManager?.clearControl()
+            GameMode.ONLINE -> firebaseManager?.clearControl()
+            else -> {}
+        }
     }
 
     fun updateBtPermissions(granted: Boolean) {
@@ -372,6 +455,48 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             _btState.update { it.copy(enabled = bt.isEnabled) }
             if (bt.isEnabled) bt.loadPairedDevices()
         }
+    }
+
+    // ---- Online (Firebase) lifecycle ----
+
+    private fun initOnline() {
+        val fb = firebaseManager ?: FirebasePongManager().also { firebaseManager = it }
+        _onlineState.value = OnlineLobbyState()
+        observeOnlineFlows(fb)
+    }
+
+    private fun observeOnlineFlows(fb: FirebasePongManager) {
+        if (onlineObserveStarted) return
+        onlineObserveStarted = true
+
+        viewModelScope.launch {
+            fb.connectionState.collect { conn ->
+                _onlineState.update { it.copy(connectionState = conn) }
+            }
+        }
+        viewModelScope.launch {
+            fb.roomCode.collect { code ->
+                _onlineState.update { it.copy(roomCode = code) }
+            }
+        }
+        viewModelScope.launch {
+            fb.connectedPlayerName.collect { name ->
+                _onlineState.update { it.copy(connectedPlayerName = name, role = fb.role) }
+            }
+        }
+    }
+
+    fun onlineCreateRoom() {
+        firebaseManager?.createRoom()
+    }
+
+    fun onlineJoinRoom(code: String) {
+        firebaseManager?.joinRoom(code)
+    }
+
+    fun onlineDisconnect() {
+        firebaseManager?.cleanup()
+        _onlineState.value = OnlineLobbyState()
     }
 
     // ---- Last BT device persistence ----
@@ -437,30 +562,51 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Pause/unpause with BT sync — client signals host, host toggles authoritatively. */
+    /** Pause/unpause with multiplayer sync — client signals host, host toggles authoritatively. */
     fun requestPause() {
         togglePause()
-        val bt = btManager
-        if (_gameState.value.gameMode == GameMode.BLUETOOTH &&
-            bt?.connectionState?.value == BtConnectionState.CONNECTED &&
-            bt.role == BtRole.CLIENT
-        ) {
-            bt.sendControl(BluetoothPongManager.CTRL_PAUSE)
+        val mode = _gameState.value.gameMode
+        when (mode) {
+            GameMode.BLUETOOTH -> {
+                val bt = btManager
+                if (bt?.connectionState?.value == BtConnectionState.CONNECTED &&
+                    bt.role == BtRole.CLIENT
+                ) {
+                    bt.sendControl(BluetoothPongManager.CTRL_PAUSE)
+                }
+            }
+            GameMode.ONLINE -> {
+                val fb = firebaseManager
+                if (fb?.isConnected == true && fb.role == BtRole.CLIENT) {
+                    fb.sendControl(BluetoothPongManager.CTRL_PAUSE)
+                }
+            }
+            else -> {}
         }
     }
 
     // ---- Game start ----
 
     fun onTapToStart() {
-        if (_gameState.value.gameMode == GameMode.BLUETOOTH) {
-            val bt = btManager ?: return
-            val btConnected = bt.connectionState.value == BtConnectionState.CONNECTED
-            if (!btConnected) return
-
-            if (bt.role == BtRole.CLIENT) {
-                bt.sendControl(BluetoothPongManager.CTRL_TAP_START)
-                return
+        val mode = _gameState.value.gameMode
+        when (mode) {
+            GameMode.BLUETOOTH -> {
+                val bt = btManager ?: return
+                if (bt.connectionState.value != BtConnectionState.CONNECTED) return
+                if (bt.role == BtRole.CLIENT) {
+                    bt.sendControl(BluetoothPongManager.CTRL_TAP_START)
+                    return
+                }
             }
+            GameMode.ONLINE -> {
+                val fb = firebaseManager ?: return
+                if (!fb.isConnected) return
+                if (fb.role == BtRole.CLIENT) {
+                    fb.sendControl(BluetoothPongManager.CTRL_TAP_START)
+                    return
+                }
+            }
+            else -> {}
         }
         handleTapToStart()
     }
@@ -483,6 +629,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         btManager?.cleanup()
+        firebaseManager?.cleanup()
         pongSound.release()
     }
 }

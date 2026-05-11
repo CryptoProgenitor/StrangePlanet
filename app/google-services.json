@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1060604157684",
+    "project_id": "strangeplanet-8e935",
+    "storage_bucket": "strangeplanet-8e935.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1060604157684:android:42456c74241e5e443cc8a1",
+        "android_client_info": {
+          "package_name": "com.quokkalabs.strangeplanet"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZHDFhqMkDs0oSD9RiQA4aZB2yluvu4aI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
