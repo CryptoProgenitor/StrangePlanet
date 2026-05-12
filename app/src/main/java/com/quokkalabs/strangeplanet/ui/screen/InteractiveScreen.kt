@@ -136,7 +136,7 @@ fun InteractiveScreen(
                 containerColor = AlienPink.copy(alpha = 0.7f),
                 contentColor = DeepNavy,
             ) {
-                Text("🏓", fontSize = 20.sp)
+                Text("🎮", fontSize = 20.sp)
             }
 
             // Settings button

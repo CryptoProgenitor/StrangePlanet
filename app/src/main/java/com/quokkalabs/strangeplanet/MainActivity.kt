@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
                         Screen.INTERACTIVE -> InteractiveScreen(
                             viewModel = viewModel,
                             onOpenSettings = { screen = Screen.SETTINGS },
-                            onOpenGame = { screen = Screen.PONG },
+                            onOpenGame = { showBulletin = true },
                         )
                         Screen.SETTINGS -> SettingsScreen(
                             viewModel = viewModel,
