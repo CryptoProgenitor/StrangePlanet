@@ -57,6 +57,8 @@ class BluetoothPongManager(private val context: Context) {
         val sayingText: String,
         val hostCreatureIdx: Int = 0,
         val clientCreatureIdx: Int = 0,
+        val ballVx: Float = 0f,  // normalised by screenWidth  (online dead-reckoning)
+        val ballVy: Float = 0f,  // normalised by screenHeight (online dead-reckoning)
     )
 
     private val bluetoothManager =

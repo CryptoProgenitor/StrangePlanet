@@ -29,6 +29,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 class PongViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -66,9 +69,16 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     // Client-side trail accumulation
     private val clientTrail = ArrayDeque<BallTrailPoint>()
 
-    // Client-side smoothing for online mode (hides 15Hz Firebase jank)
-    private var smoothBallX = 0f
-    private var smoothBallY = 0f
+    // Online dead-reckoning: ball position/velocity advanced each frame between Firebase packets
+    private var drBallX = 0f
+    private var drBallY = 0f
+    private var drVx = 0f
+    private var drVy = 0f
+    private var drLastRally = -1
+    private var clientHitSentThisRally = false
+    private var lastProcessedRemoteState: BluetoothPongManager.NetGameState? = null
+
+    // Lerp for opponent (host) paddle – still useful at 30 Hz
     private var smoothAiPaddleX = 0f
 
     fun initGame(screenWidth: Float, screenHeight: Float) {
@@ -127,7 +137,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         continue
                     }
 
-                    if (mpRemoteState != null) {
+                    if (mode == GameMode.ONLINE) {
+                        tickOnlineClient(mpRemoteState, e)
+                    } else if (mpRemoteState != null) {
                         updateClientState(mpRemoteState, e, mode)
                     }
                     // Send local touch (normalized 0-1)
@@ -169,7 +181,36 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     val lagFrames = if (mode == GameMode.ONLINE && mpRole == BtRole.HOST) 10 else 0
                     _gameState.update { e.update(it, playerTouchX, p2Touch, lagFrames) }
 
-                    val newState = _gameState.value
+                    var newState = _gameState.value
+
+                    // Online host: adopt client's claimed hit to eliminate ghost paddles
+                    if (mode == GameMode.ONLINE && mpRole == BtRole.HOST && mpConnected) {
+                        val pendingHit = firebaseManager?.remoteClientHit?.value
+                        if (pendingHit != null) {
+                            val sw = newState.screenWidth
+                            val sh = newState.screenHeight
+                            val hostJustHit = newState.aiHitPulse > prevState.aiHitPulse
+                            val ballNearAiZone = newState.phase == GamePhase.PLAYING
+                                && newState.ballY >= 0f
+                                && newState.ballY <= e.aiPaddleY + e.paddleHeight + sh * 0.20f
+                            val rallyMatch = pendingHit.rally == prevState.rally
+                            if (!hostJustHit && ballNearAiZone && rallyMatch) {
+                                _gameState.update { s ->
+                                    s.copy(
+                                        ballVx = pendingHit.vx * sw,
+                                        ballVy = pendingHit.vy * sh,
+                                        ballX = (pendingHit.bx * sw).coerceIn(e.ballRadius, sw - e.ballRadius),
+                                        ballY = (pendingHit.by * sh).coerceIn(0f, sh),
+                                        aiHitPulse = 1f,
+                                        rally = s.rally + 1,
+                                    )
+                                }
+                                newState = _gameState.value
+                            }
+                            firebaseManager?.clearClientHit()
+                        }
+                    }
+
                     val soundOn = _pongSettings.value.soundEnabled
 
                     // Paddle hit sounds
@@ -205,6 +246,183 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Online-only client tick: dead-reckons the ball every frame and processes new Firebase
+     * packets when they arrive. Replaces the lerp-based updateClientState for ONLINE mode.
+     */
+    private fun tickOnlineClient(
+        net: BluetoothPongManager.NetGameState?,
+        eng: PongEngine,
+    ) {
+        val sw = _gameState.value.screenWidth
+        val sh = _gameState.value.screenHeight
+        if (sw <= 0f || sh <= 0f || net == null) return
+
+        val isNewPacket = net !== lastProcessedRemoteState
+        // Ball position/velocity in client coordinate frame (Y flipped vs host)
+        val localBallX = net.ballX * sw
+        val localBallY = (1f - net.ballY) * sh
+        val localVx = net.ballVx * sw
+        val localVy = -(net.ballVy * sh)
+
+        if (isNewPacket) {
+            lastProcessedRemoteState = net
+            val rallyChanged = net.rally != drLastRally && drLastRally >= 0
+            when {
+                drLastRally < 0 -> {
+                    // First packet: initialise dead-reckoning state
+                    drBallX = localBallX; drBallY = localBallY
+                    drVx = localVx; drVy = localVy
+                }
+                rallyChanged -> {
+                    // Hit or serve confirmed by host: snap (hidden inside hit-event visual noise)
+                    drBallX = localBallX; drBallY = localBallY
+                    drVx = localVx; drVy = localVy
+                    clientHitSentThisRally = false
+                }
+                clientHitSentThisRally -> {
+                    // Client hit in-flight, not yet confirmed: keep client velocity,
+                    // apply only a very gentle positional correction to absorb drift
+                    drBallX += (localBallX - drBallX) * 0.04f
+                    drBallY += (localBallY - drBallY) * 0.04f
+                }
+                else -> {
+                    // Normal mid-flight packet: gentle correction + adopt host velocity
+                    drBallX += (localBallX - drBallX) * 0.08f
+                    drBallY += (localBallY - drBallY) * 0.08f
+                    drVx = localVx; drVy = localVy
+                }
+            }
+            drLastRally = net.rally
+        } else {
+            // Between packets: advance ball using last known velocity (dead reckoning)
+            val phase = GamePhase.entries.getOrElse(net.phaseOrdinal) { GamePhase.READY }
+            if (phase == GamePhase.PLAYING) {
+                drBallX += drVx
+                drBallY += drVy
+                val r = eng.ballRadius
+                if (drBallX - r < 0f) { drBallX = r; drVx = abs(drVx) }
+                else if (drBallX + r > sw) { drBallX = sw - r; drVx = -abs(drVx) }
+            }
+        }
+
+        // Client-side hit detection (every frame, not just on new packets)
+        val phase = GamePhase.entries.getOrElse(net.phaseOrdinal) { GamePhase.READY }
+        if (phase == GamePhase.PLAYING && !clientHitSentThisRally) {
+            tryDetectClientHit(net, eng, sw, sh)
+        } else if (phase != GamePhase.PLAYING) {
+            clientHitSentThisRally = false
+        }
+
+        // Opponent (host) paddle: lerp is still beneficial at 30 Hz
+        val localAiPaddleX = net.hostPaddleX * sw
+        smoothAiPaddleX += (localAiPaddleX - smoothAiPaddleX) * 0.3f
+
+        // Sync creature selections driven by host
+        val newPlayerCreature = allCreatures.getOrElse(net.clientCreatureIdx) { R.drawable.sp_pong_player }
+        val newOpponentCreature = allCreatures.getOrElse(net.hostCreatureIdx) { R.drawable.sp_pong_cat }
+        if (_playerCreature.value != newPlayerCreature) _playerCreature.value = newPlayerCreature
+        if (_player2Creature.value != newOpponentCreature) _player2Creature.value = newOpponentCreature
+
+        // Trail built from dead-reckoned position
+        if (phase == GamePhase.PLAYING || phase == GamePhase.POINT_SCORED) {
+            val last = clientTrail.firstOrNull()
+            if (last == null) {
+                clientTrail.addFirst(BallTrailPoint(drBallX, drBallY))
+            } else {
+                val dx = drBallX - last.x
+                val dy = drBallY - last.y
+                if (dx * dx + dy * dy > 1f) {
+                    clientTrail.addFirst(BallTrailPoint(drBallX, drBallY))
+                    while (clientTrail.size > 10) clientTrail.removeLast()
+                }
+            }
+        } else {
+            clientTrail.clear()
+        }
+
+        val saying = if (net.sayingSide >= 0 && net.sayingText.isNotEmpty()) {
+            val side = if (net.sayingSide == 0) GameSide.AI else GameSide.PLAYER
+            side to net.sayingText
+        } else null
+
+        val prevState = _gameState.value
+        _gameState.value = PongGameState(
+            ballX = drBallX,
+            ballY = drBallY,
+            playerPaddleX = playerTouchX?.coerceIn(eng.paddleWidth / 2f, sw - eng.paddleWidth / 2f)
+                ?: (net.clientPaddleX * sw),
+            playerPaddleY = eng.playerPaddleY,
+            aiPaddleX = smoothAiPaddleX,
+            aiPaddleY = eng.aiPaddleY,
+            paddleWidth = eng.paddleWidth,
+            paddleHeight = eng.paddleHeight,
+            ballRadius = eng.ballRadius,
+            playerScore = net.clientScore,
+            aiScore = net.hostScore,
+            phase = phase,
+            playerHitPulse = net.clientHitPulse,
+            aiHitPulse = net.hostHitPulse,
+            rally = net.rally,
+            trail = clientTrail.toList(),
+            screenWidth = sw,
+            screenHeight = sh,
+            gameMode = GameMode.ONLINE,
+            activeSaying = saying,
+        )
+
+        val soundOn = _pongSettings.value.soundEnabled
+        val newState = _gameState.value
+        if (soundOn && newState.playerHitPulse > prevState.playerHitPulse) pongSound.playPlayerHit()
+        if (soundOn && newState.aiHitPulse > prevState.aiHitPulse) pongSound.playAiHit()
+        if (soundOn && (newState.playerScore > prevState.playerScore ||
+                    newState.aiScore > prevState.aiScore)
+        ) pongSound.playScore()
+    }
+
+    /**
+     * Detects whether the dead-reckoned ball has entered the client's paddle zone, computes the
+     * deflection locally, applies it to the dead-reckoned state, and sends the hit claim to the
+     * host so it can adopt the result and eliminate the ghost-paddle effect.
+     */
+    private fun tryDetectClientHit(
+        net: BluetoothPongManager.NetGameState,
+        eng: PongEngine,
+        sw: Float,
+        sh: Float,
+    ) {
+        if (drVy <= 0f) return                             // not moving toward player paddle
+        val paddleSurface = eng.playerPaddleY - eng.paddleHeight
+        if (drBallY + eng.ballRadius < paddleSurface) return // not yet at paddle surface
+
+        val halfPaddle = eng.paddleWidth / 2f
+        val clientPaddleX = playerTouchX?.coerceIn(halfPaddle, sw - halfPaddle)
+            ?: (net.clientPaddleX * sw)
+        if (drBallX < clientPaddleX - halfPaddle - eng.ballRadius ||
+            drBallX > clientPaddleX + halfPaddle + eng.ballRadius
+        ) return                                            // missed paddle — genuine miss
+
+        // Ball is within paddle bounds: compute deflection (mirrors PongEngine logic)
+        val hitPos = ((drBallX - clientPaddleX) / halfPaddle).coerceIn(-1f, 1f)
+        val angle = hitPos * eng.maxDeflection
+        val speed = (eng.ballBaseSpeed + drLastRally * eng.speedRampPerHit)
+            .coerceAtMost(eng.ballMaxSpeed)
+        drVx = speed * sin(angle)
+        drVy = -speed * cos(angle)                         // going up in client frame
+        drBallY = paddleSurface - eng.ballRadius
+        clientHitSentThisRally = true
+
+        // Send hit claim to host in host coordinate frame (Y flipped back)
+        firebaseManager?.sendClientHit(
+            bx = drBallX / sw,
+            by = 1f - (drBallY / sh),
+            vx = drVx / sw,
+            vy = -(drVy / sh),                             // flip: client up → host positive-Y
+            rally = drLastRally,
+        )
+        if (_pongSettings.value.soundEnabled) pongSound.playPlayerHit()
+    }
+
     private fun updateClientState(
         net: BluetoothPongManager.NetGameState,
         eng: PongEngine,
@@ -227,26 +445,10 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
         val phase = GamePhase.entries.getOrElse(net.phaseOrdinal) { GamePhase.READY }
 
-        // Smooth ball and opponent paddle for online mode to hide 15Hz jank
-        val displayBallX: Float
-        val displayBallY: Float
-        val displayAiPaddleX: Float
-        if (mode == GameMode.ONLINE && (phase == GamePhase.PLAYING || phase == GamePhase.POINT_SCORED)) {
-            smoothBallX += (localBallX - smoothBallX) * 0.35f
-            smoothBallY += (localBallY - smoothBallY) * 0.35f
-            smoothAiPaddleX += (localAiPaddleX - smoothAiPaddleX) * 0.3f
-            displayBallX = smoothBallX
-            displayBallY = smoothBallY
-            displayAiPaddleX = smoothAiPaddleX
-        } else {
-            // Snap for BT mode or non-playing phases
-            smoothBallX = localBallX
-            smoothBallY = localBallY
-            smoothAiPaddleX = localAiPaddleX
-            displayBallX = localBallX
-            displayBallY = localBallY
-            displayAiPaddleX = localAiPaddleX
-        }
+        // BT mode: instant snap (BT latency is low enough that smoothing is unnecessary)
+        val displayBallX = localBallX
+        val displayBallY = localBallY
+        val displayAiPaddleX = localAiPaddleX
 
         // Build trail on client side (movement-gated to prevent clustering)
         if (phase == GamePhase.PLAYING || phase == GamePhase.POINT_SCORED) {
@@ -344,10 +546,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         _gameState.value = e.createInitialState(mode)
-        clientTrail.clear()
-        smoothBallX = 0f
-        smoothBallY = 0f
-        smoothAiPaddleX = 0f
+        resetDeadReckoning()
     }
 
     // ---- Settings ----
@@ -587,9 +786,16 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     fun resetGame() {
         val e = engine ?: return
         _gameState.value = e.createInitialState()
+        resetDeadReckoning()
+    }
+
+    private fun resetDeadReckoning() {
         clientTrail.clear()
-        smoothBallX = 0f
-        smoothBallY = 0f
+        drBallX = 0f; drBallY = 0f
+        drVx = 0f; drVy = 0f
+        drLastRally = -1
+        clientHitSentThisRally = false
+        lastProcessedRemoteState = null
         smoothAiPaddleX = 0f
     }
 

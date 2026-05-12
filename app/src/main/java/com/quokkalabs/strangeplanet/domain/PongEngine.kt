@@ -34,19 +34,19 @@ class PongEngine(
         DifficultyLevel.AGGRESSIVE -> 0.18f
     }
 
-    private val ballBaseSpeed = screenHeight * when (difficulty) {
+    val ballBaseSpeed = screenHeight * when (difficulty) {
         DifficultyLevel.GENTLE -> 0.007f
         DifficultyLevel.STANDARD -> 0.009f
         DifficultyLevel.AGGRESSIVE -> 0.012f
     }
 
-    private val ballMaxSpeed = screenHeight * when (difficulty) {
+    val ballMaxSpeed = screenHeight * when (difficulty) {
         DifficultyLevel.GENTLE -> 0.013f
         DifficultyLevel.STANDARD -> 0.018f
         DifficultyLevel.AGGRESSIVE -> 0.024f
     }
 
-    private val speedRampPerHit = screenHeight * when (difficulty) {
+    val speedRampPerHit = screenHeight * when (difficulty) {
         DifficultyLevel.GENTLE -> 0.0002f
         DifficultyLevel.STANDARD -> 0.0004f
         DifficultyLevel.AGGRESSIVE -> 0.0007f
@@ -58,7 +58,7 @@ class PongEngine(
         DifficultyLevel.AGGRESSIVE -> 0.070f
     }
 
-    private val maxDeflection = MAX_DEFLECTION_DEG * PI.toFloat() / 180f
+    val maxDeflection = MAX_DEFLECTION_DEG * PI.toFloat() / 180f
 
     private val playerScoreSayings = listOf(
         "I have deflected the sphere past your implement!",

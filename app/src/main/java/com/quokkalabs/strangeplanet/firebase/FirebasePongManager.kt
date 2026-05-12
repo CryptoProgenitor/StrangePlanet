@@ -22,7 +22,7 @@ class FirebasePongManager {
         private const val TAG = "FbPong"
         private const val ROOMS_PATH = "rooms"
         private const val CODE_LENGTH = 4
-        private const val SEND_INTERVAL_MS = 66L // ~15 Hz
+        private const val SEND_INTERVAL_MS = 33L // ~30 Hz
     }
 
     private val database = FirebaseDatabase.getInstance()
@@ -32,6 +32,7 @@ class FirebasePongManager {
     private var controlListener: ValueEventListener? = null
     private var joinedListener: ValueEventListener? = null
     private var roomExistsListener: ValueEventListener? = null
+    private var clientHitListener: ValueEventListener? = null
 
     // ---- Public state flows ----
 
@@ -51,6 +52,18 @@ class FirebasePongManager {
 
     private val _remoteControl = MutableStateFlow<Byte?>(null)
     val remoteControl: StateFlow<Byte?> = _remoteControl.asStateFlow()
+
+    /** Claimed hit event sent by the client to the host for authoritative adoption. */
+    data class ClientHitEvent(
+        val bx: Float,    // normalised ball x in host frame
+        val by: Float,    // normalised ball y in host frame
+        val vx: Float,    // normalised post-hit velocity x in host frame
+        val vy: Float,    // normalised post-hit velocity y in host frame
+        val rally: Int,   // rally count before this hit (for matching on host)
+    )
+
+    private val _remoteClientHit = MutableStateFlow<ClientHitEvent?>(null)
+    val remoteClientHit: StateFlow<ClientHitEvent?> = _remoteClientHit.asStateFlow()
 
     private val _connectedPlayerName = MutableStateFlow<String?>(null)
     val connectedPlayerName: StateFlow<String?> = _connectedPlayerName.asStateFlow()
@@ -159,6 +172,8 @@ class FirebasePongManager {
         val stateMap = mapOf(
             "bx" to (state.ballX / sw).toDouble(),
             "by" to (state.ballY / sh).toDouble(),
+            "bvx" to (state.ballVx / sw).toDouble(),
+            "bvy" to (state.ballVy / sh).toDouble(),
             "hpx" to (state.playerPaddleX / sw).toDouble(),
             "cpx" to (state.aiPaddleX / sw).toDouble(),
             "hs" to state.playerScore,
@@ -189,6 +204,24 @@ class FirebasePongManager {
             "a" to (normalizedX != null),
         )
         ref.child("clientTouch").setValue(touchMap)
+    }
+
+    /** Client → host: claim a local hit so the host can adopt it if it missed. */
+    fun sendClientHit(bx: Float, by: Float, vx: Float, vy: Float, rally: Int) {
+        val ref = roomRef ?: return
+        ref.child("clientHit").setValue(
+            mapOf(
+                "bx" to bx.toDouble(),
+                "by" to by.toDouble(),
+                "vx" to vx.toDouble(),
+                "vy" to vy.toDouble(),
+                "r" to rally,
+            ),
+        )
+    }
+
+    fun clearClientHit() {
+        _remoteClientHit.value = null
     }
 
     // ---- Control (both sides) ----
@@ -242,11 +275,13 @@ class FirebasePongManager {
         controlListener?.let { roomRef?.child("control")?.removeEventListener(it) }
         joinedListener?.let { roomRef?.child("clientJoined")?.removeEventListener(it) }
         roomExistsListener?.let { roomRef?.removeEventListener(it) }
+        clientHitListener?.let { roomRef?.child("clientHit")?.removeEventListener(it) }
         stateListener = null
         touchListener = null
         controlListener = null
         joinedListener = null
         roomExistsListener = null
+        clientHitListener = null
     }
 
     /** Host: listen for a client joining the room. */
@@ -259,6 +294,7 @@ class FirebasePongManager {
                     _connectedPlayerName.value = "Distant Being"
                     listenForClientTouch(ref)
                     listenForControl(ref, "client")
+                    listenForClientHit(ref)
                 } else if (!joined && _connectionState.value == OnlineConnectionState.CONNECTED) {
                     // Client disconnected
                     _connectionState.value = OnlineConnectionState.WAITING_FOR_PLAYER
@@ -301,6 +337,10 @@ class FirebasePongManager {
                         ballX = snapshot.child("bx").getValue(Double::class.java)
                             ?.toFloat() ?: 0f,
                         ballY = snapshot.child("by").getValue(Double::class.java)
+                            ?.toFloat() ?: 0f,
+                        ballVx = snapshot.child("bvx").getValue(Double::class.java)
+                            ?.toFloat() ?: 0f,
+                        ballVy = snapshot.child("bvy").getValue(Double::class.java)
                             ?.toFloat() ?: 0f,
                         hostPaddleX = snapshot.child("hpx").getValue(Double::class.java)
                             ?.toFloat() ?: 0f,
@@ -360,6 +400,32 @@ class FirebasePongManager {
             }
         }
         ref.child("control").addValueEventListener(controlListener!!)
+    }
+
+    /** Host: receive hit claims from the client for ghost-paddle elimination. */
+    private fun listenForClientHit(ref: DatabaseReference) {
+        if (clientHitListener != null) return
+        clientHitListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) return
+                try {
+                    _remoteClientHit.value = ClientHitEvent(
+                        bx = snapshot.child("bx").getValue(Double::class.java)?.toFloat() ?: return,
+                        by = snapshot.child("by").getValue(Double::class.java)?.toFloat() ?: return,
+                        vx = snapshot.child("vx").getValue(Double::class.java)?.toFloat() ?: return,
+                        vy = snapshot.child("vy").getValue(Double::class.java)?.toFloat() ?: return,
+                        rally = snapshot.child("r").getValue(Long::class.java)?.toInt() ?: return,
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to parse client hit", e)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "Client hit listener cancelled", error.toException())
+            }
+        }
+        ref.child("clientHit").addValueEventListener(clientHitListener!!)
     }
 
     /** Client: detect if the host deleted the room (disconnected). */
