@@ -27,6 +27,7 @@ private data class MetricSnapshot(
     val meanSnapPx: Float = 0f,
     val packetsPerSec: Int = 0,
     val rttMs: Long = 0L,
+    val packetAgeMs: Long = 0L,
     val sweepPhase: Int = 0,
 )
 
@@ -47,6 +48,7 @@ fun DebugHud(modifier: Modifier = Modifier) {
                 meanSnapPx = if (count > 0) PongDebugMetrics.totalSnapPx.get() / count else 0f,
                 packetsPerSec = PongDebugMetrics.packetsPerSec.get(),
                 rttMs = PongDebugMetrics.lastRoundTripMs.get(),
+                packetAgeMs = PongDebugMetrics.lastPacketAgeMs.get(),
                 sweepPhase = PongDebugMetrics.botSweepPhase.get(),
             )
         }
@@ -78,7 +80,7 @@ fun DebugHud(modifier: Modifier = Modifier) {
         val sweepLabel = SWEEP_LABELS.getOrElse(snap.sweepPhase) { "${snap.sweepPhase}" }
         val isMissPhase = snap.sweepPhase >= 5
         Text(
-            text = "pkts: ${snap.packetsPerSec}/s  rtt: ${snap.rttMs}ms",
+            text = "pkts: ${snap.packetsPerSec}/s  rtt: ${snap.rttMs}ms  age: ${snap.packetAgeMs}ms",
             color = Color.White.copy(alpha = 0.75f),
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,

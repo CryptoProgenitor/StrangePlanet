@@ -59,8 +59,9 @@ class BluetoothPongManager(private val context: Context) {
         val clientCreatureIdx: Int = 0,
         val ballVx: Float = 0f,  // normalised by screenWidth  (online dead-reckoning)
         val ballVy: Float = 0f,  // normalised by screenHeight (online dead-reckoning)
-        val hostScreenWidth: Float = 0f,   // host physical px — client uses these to reconstruct velocity
+        val hostScreenWidth: Float = 0f,    // host physical px — client uses these to reconstruct velocity
         val hostScreenHeight: Float = 0f,  // so mismatched screen sizes don't skew dead-reckoning
+        val serverTimestamp: Long = 0L,    // Firebase server time when this state was valid
     )
 
     private val bluetoothManager =

@@ -389,15 +389,30 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 clientHitSentThisRally -> {
                     // Client hit in-flight, not yet confirmed: keep client velocity,
-                    // apply only a very gentle positional correction to absorb drift
-                    drBallX += (localBallX - drBallX) * 0.04f
-                    drBallY += (localBallY - drBallY) * 0.04f
+                    // apply only a hair of positional correction to absorb floating-point drift
+                    drBallX += (localBallX - drBallX) * 0.02f
+                    drBallY += (localBallY - drBallY) * 0.02f
                 }
                 else -> {
-                    // Normal mid-flight packet: gentle correction + adopt host velocity
-                    drBallX += (localBallX - drBallX) * 0.08f
-                    drBallY += (localBallY - drBallY) * 0.08f
+                    // Normal packet: adopt host position/velocity exactly, then extrapolate
+                    // forward by the packet's age so the ball lands where the host is *now*
+                    // rather than where it was when the packet was written (~150-300ms ago).
+                    drBallX = localBallX; drBallY = localBallY
                     drVx = localVx; drVy = localVy
+                    val ts = net.serverTimestamp
+                    if (ts > 0L) {
+                        val dtMs = (firebaseManager!!.currentServerTimeMs() - ts)
+                            .coerceIn(0L, 500L)
+                        PongDebugMetrics.lastPacketAgeMs.set(dtMs)
+                        val r = eng.ballRadius
+                        var steps = (dtMs / 16f).toInt()
+                        while (steps-- > 0) {
+                            drBallX += drVx
+                            drBallY += drVy
+                            if (drBallX - r < 0f) { drBallX = r; drVx = abs(drVx) }
+                            else if (drBallX + r > sw) { drBallX = sw - r; drVx = -abs(drVx) }
+                        }
+                    }
                 }
             }
             drLastRally = net.rally

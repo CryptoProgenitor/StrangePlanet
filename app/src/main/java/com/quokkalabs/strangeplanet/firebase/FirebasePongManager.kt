@@ -26,6 +26,7 @@ class FirebasePongManager {
     }
 
     private val database = FirebaseDatabase.getInstance()
+    private var serverTimeOffsetMs = 0L
     private var roomRef: DatabaseReference? = null
     private var stateListener: ValueEventListener? = null
     private var touchListener: ValueEventListener? = null
@@ -33,6 +34,18 @@ class FirebasePongManager {
     private var joinedListener: ValueEventListener? = null
     private var roomExistsListener: ValueEventListener? = null
     private var clientHitListener: ValueEventListener? = null
+
+    init {
+        database.getReference(".info/serverTimeOffset")
+            .addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    serverTimeOffsetMs = snapshot.getValue(Long::class.java) ?: 0L
+                }
+                override fun onCancelled(error: DatabaseError) {}
+            })
+    }
+
+    fun currentServerTimeMs() = System.currentTimeMillis() + serverTimeOffsetMs
 
     // ---- Public state flows ----
 
@@ -192,6 +205,7 @@ class FirebasePongManager {
             "cci" to clientCreatureIdx,
             "hsw" to sw.toDouble(),
             "hsh" to sh.toDouble(),
+            "ts" to ServerValue.TIMESTAMP,
         )
 
         ref.child("state").setValue(stateMap)
@@ -373,6 +387,7 @@ class FirebasePongManager {
                             ?.toFloat() ?: 0f,
                         hostScreenHeight = snapshot.child("hsh").getValue(Double::class.java)
                             ?.toFloat() ?: 0f,
+                        serverTimestamp = snapshot.child("ts").getValue(Long::class.java) ?: 0L,
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to parse game state", e)
