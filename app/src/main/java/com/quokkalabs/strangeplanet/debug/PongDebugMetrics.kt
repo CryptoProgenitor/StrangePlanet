@@ -39,7 +39,9 @@ object PongDebugMetrics {
             2 -> "right75"
             3 -> "leftEdge"
             4 -> "rightEdge"
-            5 -> "MISS"
+            5 -> "nearMissL"
+            6 -> "nearMissR"
+            7 -> "MISS"
             else -> "$sweepPhase"
         }
         Log.i(

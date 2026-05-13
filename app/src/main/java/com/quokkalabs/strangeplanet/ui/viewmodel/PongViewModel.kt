@@ -88,17 +88,21 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     private var botStartCountdown = 0
 
     // Bot sweep: cycles the paddle contact point across the full paddle width and into miss zones.
-    // sweepOffset is a fraction of halfPaddle; |offset| > 1.5 signals an intentional miss phase.
-    // playerTouchX = drBallX - sweepOffset * halfPaddle  → hitPos == sweepOffset at contact time.
+    // Offsets are fractions of halfPaddle for hit phases.
+    // |offset| >= 1.85f → near-miss sentinel: pad positioned (halfPaddle + ballRadius + 2px) away.
+    // |offset| >= 2.00f → full miss: paddle parked at opposite wall.
+    // playerTouchX = drBallX - sweepOffset * halfPaddle → hitPos == sweepOffset at contact time.
     private var botSweepPhase = 0
     private var botSweepLastRally = -1
     private val BOT_SWEEP_OFFSETS = floatArrayOf(
-        0.00f,   // center hit
-       -0.75f,   // 75% toward left edge
-        0.75f,   // 75% toward right edge
-       -0.95f,   // near left edge (95%)
-        0.95f,   // near right edge (95%)
-        2.00f,   // intentional miss — paddle placed at opposite side of screen
+        0.00f,   // phase 0: center hit
+       -0.75f,   // phase 1: hit 75% toward left edge
+        0.75f,   // phase 2: hit 75% toward right edge
+       -0.95f,   // phase 3: hit near left edge (95%)
+        0.95f,   // phase 4: hit near right edge (95%)
+        1.90f,   // phase 5: near-miss LEFT  — paddle 2px beyond right of ball
+       -1.90f,   // phase 6: near-miss RIGHT — paddle 2px beyond left of ball
+        2.00f,   // phase 7: full miss       — paddle at opposite wall
     )
 
     fun initGame(screenWidth: Float, screenHeight: Float) {
@@ -176,11 +180,25 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                                 val halfPaddle = e.paddleWidth / 2f
                                 val offset = BOT_SWEEP_OFFSETS[botSweepPhase % BOT_SWEEP_OFFSETS.size]
                                 val ballX = _gameState.value.ballX
-                                playerTouchX = if (offset > 1.5f || offset < -1.5f) {
-                                    // Intentional miss: park paddle on the far side of the screen
-                                    if (ballX < sw / 2f) sw - halfPaddle else halfPaddle
-                                } else {
-                                    (ballX - offset * halfPaddle).coerceIn(halfPaddle, sw - halfPaddle)
+                                val absOffset = abs(offset)
+                                playerTouchX = when {
+                                    absOffset >= 2.0f -> {
+                                        // Full miss: park at opposite wall
+                                        if (ballX < sw / 2f) sw - halfPaddle else halfPaddle
+                                    }
+                                    absOffset >= 1.85f -> {
+                                        // Near-miss: position paddle exactly (halfPaddle + ballRadius + 2px)
+                                        // away from the ball — just outside the hit detection threshold.
+                                        val missMargin = halfPaddle + e.ballRadius + 2f
+                                        if (offset > 0f)
+                                            (ballX + missMargin).coerceIn(halfPaddle, sw - halfPaddle)
+                                        else
+                                            (ballX - missMargin).coerceIn(halfPaddle, sw - halfPaddle)
+                                    }
+                                    else -> {
+                                        // Hit at a specific fraction of halfPaddle
+                                        (ballX - offset * halfPaddle).coerceIn(halfPaddle, sw - halfPaddle)
+                                    }
                                 }
                                 PongDebugMetrics.botSweepPhase.set(botSweepPhase % BOT_SWEEP_OFFSETS.size)
                             }

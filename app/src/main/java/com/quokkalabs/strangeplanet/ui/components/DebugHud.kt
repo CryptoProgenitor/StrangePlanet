@@ -30,7 +30,7 @@ private data class MetricSnapshot(
     val sweepPhase: Int = 0,
 )
 
-private val SWEEP_LABELS = arrayOf("ctr", "L75", "R75", "Ledge", "Redge", "MISS")
+private val SWEEP_LABELS = arrayOf("ctr", "L75", "R75", "Ledge", "Redge", "nmL", "nmR", "MISS")
 
 @Composable
 fun DebugHud(modifier: Modifier = Modifier) {
@@ -76,7 +76,7 @@ fun DebugHud(modifier: Modifier = Modifier) {
             fontFamily = FontFamily.Monospace,
         )
         val sweepLabel = SWEEP_LABELS.getOrElse(snap.sweepPhase) { "${snap.sweepPhase}" }
-        val isMissPhase = snap.sweepPhase == 5
+        val isMissPhase = snap.sweepPhase >= 5
         Text(
             text = "pkts: ${snap.packetsPerSec}/s  rtt: ${snap.rttMs}ms",
             color = Color.White.copy(alpha = 0.75f),
