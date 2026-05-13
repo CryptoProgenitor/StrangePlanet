@@ -15,6 +15,8 @@ import com.quokkalabs.strangeplanet.data.model.PongGameState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.webrtc.IceCandidate
+import org.webrtc.SessionDescription
 
 class FirebasePongManager {
 
@@ -34,6 +36,8 @@ class FirebasePongManager {
     private var joinedListener: ValueEventListener? = null
     private var roomExistsListener: ValueEventListener? = null
     private var clientHitListener: ValueEventListener? = null
+    private var sdpListener: ValueEventListener? = null
+    private var iceCandidateListener: ValueEventListener? = null
 
     init {
         database.getReference(".info/serverTimeOffset")
@@ -257,6 +261,84 @@ class FirebasePongManager {
         _remoteControl.value = null
     }
 
+    // ---- WebRTC signaling ----
+
+    /** Write local SDP (offer or answer) under rooms/<code>/rtc/<key>. */
+    fun sendSdp(sdp: SessionDescription) {
+        val ref = roomRef ?: return
+        val key = if (role == BtRole.HOST) "offer" else "answer"
+        ref.child("rtc/$key").setValue(
+            mapOf("type" to sdp.type.canonicalForm(), "sdp" to sdp.description),
+        )
+    }
+
+    /** Write one local ICE candidate. Host writes to rtc/hostIce, client to rtc/clientIce. */
+    fun sendIceCandidate(candidate: IceCandidate) {
+        val ref = roomRef ?: return
+        val key = if (role == BtRole.HOST) "hostIce" else "clientIce"
+        ref.child("rtc/$key").push().setValue(
+            mapOf(
+                "sdpMid" to candidate.sdpMid,
+                "sdpMLineIndex" to candidate.sdpMLineIndex,
+                "sdp" to candidate.sdp,
+            ),
+        )
+    }
+
+    /** Host listens for client's answer SDP. */
+    fun listenForAnswer(onAnswer: (SessionDescription) -> Unit) {
+        val ref = roomRef ?: return
+        sdpListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) return
+                val type = snapshot.child("type").getValue(String::class.java) ?: return
+                val sdpStr = snapshot.child("sdp").getValue(String::class.java) ?: return
+                val sdpType = SessionDescription.Type.fromCanonicalForm(type) ?: return
+                onAnswer(SessionDescription(sdpType, sdpStr))
+                snapshot.ref.removeEventListener(this)
+                sdpListener = null
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        ref.child("rtc/answer").addValueEventListener(sdpListener!!)
+    }
+
+    /** Client listens for host's offer SDP. */
+    fun listenForOffer(onOffer: (SessionDescription) -> Unit) {
+        val ref = roomRef ?: return
+        sdpListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) return
+                val type = snapshot.child("type").getValue(String::class.java) ?: return
+                val sdpStr = snapshot.child("sdp").getValue(String::class.java) ?: return
+                val sdpType = SessionDescription.Type.fromCanonicalForm(type) ?: return
+                onOffer(SessionDescription(sdpType, sdpStr))
+                snapshot.ref.removeEventListener(this)
+                sdpListener = null
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        ref.child("rtc/offer").addValueEventListener(sdpListener!!)
+    }
+
+    /** Listen for the remote side's ICE candidates (continuous, until cleanup). */
+    fun listenForRemoteIceCandidates(onCandidate: (IceCandidate) -> Unit) {
+        val ref = roomRef ?: return
+        val key = if (role == BtRole.HOST) "clientIce" else "hostIce"
+        iceCandidateListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                for (child in snapshot.children) {
+                    val mid = child.child("sdpMid").getValue(String::class.java) ?: continue
+                    val idx = child.child("sdpMLineIndex").getValue(Long::class.java)?.toInt() ?: continue
+                    val sdp = child.child("sdp").getValue(String::class.java) ?: continue
+                    onCandidate(IceCandidate(mid, idx, sdp))
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        ref.child("rtc/$key").addValueEventListener(iceCandidateListener!!)
+    }
+
     // ---- Lifecycle ----
 
     fun cleanup() {
@@ -293,12 +375,17 @@ class FirebasePongManager {
         joinedListener?.let { roomRef?.child("clientJoined")?.removeEventListener(it) }
         roomExistsListener?.let { roomRef?.removeEventListener(it) }
         clientHitListener?.let { roomRef?.child("clientHit")?.removeEventListener(it) }
+        sdpListener?.let { roomRef?.child("rtc/offer")?.removeEventListener(it); roomRef?.child("rtc/answer")?.removeEventListener(it) }
+        val iceKey = if (role == BtRole.HOST) "clientIce" else "hostIce"
+        iceCandidateListener?.let { roomRef?.child("rtc/$iceKey")?.removeEventListener(it) }
         stateListener = null
         touchListener = null
         controlListener = null
         joinedListener = null
         roomExistsListener = null
         clientHitListener = null
+        sdpListener = null
+        iceCandidateListener = null
     }
 
     /** Host: listen for a client joining the room. */

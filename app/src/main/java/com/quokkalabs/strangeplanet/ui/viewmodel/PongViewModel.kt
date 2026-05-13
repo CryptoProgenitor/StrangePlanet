@@ -21,7 +21,9 @@ import com.quokkalabs.strangeplanet.data.model.OnlineLobbyState
 import com.quokkalabs.strangeplanet.data.model.PongGameState
 import com.quokkalabs.strangeplanet.data.model.PongSettings
 import com.quokkalabs.strangeplanet.domain.PongEngine
+import android.util.Log
 import com.quokkalabs.strangeplanet.firebase.FirebasePongManager
+import com.quokkalabs.strangeplanet.webrtc.WebRtcPongManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,6 +69,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     private var btManager: BluetoothPongManager? = null
     private var btObserveStarted = false
     private var firebaseManager: FirebasePongManager? = null
+    private var webRtcManager: WebRtcPongManager? = null
     private var onlineObserveStarted = false
 
     // Client-side trail accumulation
@@ -146,11 +149,19 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     GameMode.ONLINE -> {
                         val fb = firebaseManager
+                        val rtc = webRtcManager
                         mpRole = fb?.role
                         mpConnected = fb?.isConnected == true
-                        mpRemoteTouchX = fb?.remoteTouchX?.value
-                        mpRemoteState = fb?.remoteGameState?.value
-                        mpRemoteControl = fb?.remoteControl?.value
+                        // When WebRTC DataChannel is open, use it for game data
+                        if (rtc?.isOpen == true) {
+                            mpRemoteTouchX = rtc.remoteTouchX.value
+                            mpRemoteState = rtc.remoteGameState.value
+                            mpRemoteControl = rtc.remoteControl.value
+                        } else {
+                            mpRemoteTouchX = fb?.remoteTouchX?.value
+                            mpRemoteState = fb?.remoteGameState?.value
+                            mpRemoteControl = fb?.remoteControl?.value
+                        }
                     }
                     else -> {
                         mpRole = null
@@ -230,7 +241,11 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     val normX = if (sw > 0f) playerTouchX?.let { it / sw } else null
                     when (mode) {
                         GameMode.BLUETOOTH -> btManager?.sendTouch(normX)
-                        GameMode.ONLINE -> firebaseManager?.sendTouch(normX)
+                        GameMode.ONLINE -> {
+                            val rtc = webRtcManager
+                            if (rtc?.isOpen == true) rtc.sendTouch(normX)
+                            else firebaseManager?.sendTouch(normX)
+                        }
                         else -> {}
                     }
                 } else {
@@ -268,14 +283,17 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
                     // Online host: adopt client's claimed hit to eliminate ghost paddles
                     if (mode == GameMode.ONLINE && mpRole == BtRole.HOST && mpConnected) {
-                        val pendingHit = firebaseManager?.remoteClientHit?.value
+                        val rtc = webRtcManager
+                        val pendingHit = if (rtc?.isOpen == true) rtc.remoteClientHit.value
+                                         else firebaseManager?.remoteClientHit?.value
                         if (pendingHit != null) {
                             val sw = newState.screenWidth
                             val sh = newState.screenHeight
                             val rallyMatch = pendingHit.rally == prevState.rally
                             if (!rallyMatch) {
                                 // Stale event (rally already moved on) — discard without adopting
-                                firebaseManager?.clearClientHit()
+                                if (rtc?.isOpen == true) rtc.clearClientHit()
+                                else firebaseManager?.clearClientHit()
                             } else {
                                 val hostJustHit = newState.aiHitPulse > prevState.aiHitPulse
                                 if (!hostJustHit && newState.phase == GamePhase.PLAYING) {
@@ -290,7 +308,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                                         )
                                     }
                                     newState = _gameState.value
-                                    firebaseManager?.clearClientHit()
+                                    if (rtc?.isOpen == true) rtc.clearClientHit()
+                                else firebaseManager?.clearClientHit()
                                 }
                                 // else: ball not yet in playable state — keep pending hit for next frame
                             }
@@ -323,7 +342,41 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         val clientIdx = allCreatures.indexOf(_player2Creature.value).coerceAtLeast(0)
                         when (mode) {
                             GameMode.BLUETOOTH -> btManager?.sendGameState(newState, hostIdx, clientIdx)
-                            GameMode.ONLINE -> firebaseManager?.sendGameState(newState, hostIdx, clientIdx)
+                            GameMode.ONLINE -> {
+                                val rtc = webRtcManager
+                                if (rtc?.isOpen == true) {
+                                    // Build a NetGameState from PongGameState for WebRTC transport
+                                    val sw = newState.screenWidth
+                                    val sh = newState.screenHeight
+                                    if (sw > 0f && sh > 0f) {
+                                        val netState = BluetoothPongManager.NetGameState(
+                                            ballX = newState.ballX / sw,
+                                            ballY = newState.ballY / sh,
+                                            ballVx = newState.ballVx / sw,
+                                            ballVy = newState.ballVy / sh,
+                                            hostPaddleX = newState.playerPaddleX / sw,
+                                            clientPaddleX = newState.aiPaddleX / sw,
+                                            hostScore = newState.playerScore,
+                                            clientScore = newState.aiScore,
+                                            phaseOrdinal = newState.phase.ordinal,
+                                            hostHitPulse = newState.playerHitPulse,
+                                            clientHitPulse = newState.aiHitPulse,
+                                            rally = newState.rally,
+                                            sayingSide = if (newState.activeSaying != null) {
+                                                if (newState.activeSaying.first == GameSide.PLAYER) 0 else 1
+                                            } else -1,
+                                            sayingText = newState.activeSaying?.second ?: "",
+                                            hostCreatureIdx = hostIdx,
+                                            clientCreatureIdx = clientIdx,
+                                            hostScreenWidth = sw,
+                                            hostScreenHeight = sh,
+                                        )
+                                        rtc.sendGameState(netState, System.currentTimeMillis())
+                                    }
+                                } else {
+                                    firebaseManager?.sendGameState(newState, hostIdx, clientIdx)
+                                }
+                            }
                             else -> {}
                         }
                     }
@@ -541,13 +594,24 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         // the velocity from being scaled by clientSW/hostSW on reconstruction.
         val hostSW = if (net.hostScreenWidth > 0f) net.hostScreenWidth else sw
         val hostSH = if (net.hostScreenHeight > 0f) net.hostScreenHeight else sh
-        firebaseManager?.sendClientHit(
-            bx = drBallX / sw,
-            by = 1f - (drBallY / sh),
-            vx = drVx / hostSW,
-            vy = -(drVy / hostSH),                         // flip: client up → host positive-Y
-            rally = drLastRally,
-        )
+        val rtc = webRtcManager
+        if (rtc?.isOpen == true) {
+            rtc.sendClientHit(
+                bx = drBallX / sw,
+                by = 1f - (drBallY / sh),
+                vx = drVx / hostSW,
+                vy = -(drVy / hostSH),
+                rally = drLastRally,
+            )
+        } else {
+            firebaseManager?.sendClientHit(
+                bx = drBallX / sw,
+                by = 1f - (drBallY / sh),
+                vx = drVx / hostSW,
+                vy = -(drVy / hostSH),
+                rally = drLastRally,
+            )
+        }
         if (_pongSettings.value.soundEnabled) pongSound.playPlayerHit()
     }
 
@@ -670,6 +734,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             }
             else -> {
                 btManager?.cleanup()
+                webRtcManager?.cleanup()
+                webRtcManager = null
                 firebaseManager?.cleanup()
             }
         }
@@ -789,7 +855,11 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Local player quits mid-game in online mode. */
     fun quitOnlineGame() {
-        firebaseManager?.sendControl(BluetoothPongManager.CTRL_QUIT)
+        val rtc = webRtcManager
+        if (rtc?.isOpen == true) rtc.sendControl(BluetoothPongManager.CTRL_QUIT)
+        else firebaseManager?.sendControl(BluetoothPongManager.CTRL_QUIT)
+        webRtcManager?.cleanup()
+        webRtcManager = null
         firebaseManager?.cleanup()
         _onlineState.value = OnlineLobbyState()
         resetGame()
@@ -809,6 +879,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                 _btState.value = BluetoothLobbyState()
             }
             GameMode.ONLINE -> {
+                webRtcManager?.cleanup()
+                webRtcManager = null
                 firebaseManager?.cleanup()
                 _onlineState.value = OnlineLobbyState()
             }
@@ -819,7 +891,10 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     private fun clearMultiplayerControl(mode: GameMode) {
         when (mode) {
             GameMode.BLUETOOTH -> btManager?.clearControl()
-            GameMode.ONLINE -> firebaseManager?.clearControl()
+            GameMode.ONLINE -> {
+                val rtc = webRtcManager
+                if (rtc?.isOpen == true) rtc.clearControl() else firebaseManager?.clearControl()
+            }
             else -> {}
         }
     }
@@ -836,9 +911,27 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     // ---- Online (Firebase) lifecycle ----
 
     private fun initOnline() {
+        webRtcManager?.cleanup()
+        webRtcManager = null
+        onlineObserveStarted = false
         val fb = firebaseManager ?: FirebasePongManager().also { firebaseManager = it }
         _onlineState.value = OnlineLobbyState()
         observeOnlineFlows(fb)
+        val rtc = WebRtcPongManager(getApplication()).also { webRtcManager = it }
+        rtc.init(object : WebRtcPongManager.SignalingCallback {
+            override fun onLocalSdp(sdp: org.webrtc.SessionDescription) {
+                fb.sendSdp(sdp)
+            }
+            override fun onLocalIceCandidate(candidate: org.webrtc.IceCandidate) {
+                fb.sendIceCandidate(candidate)
+            }
+            override fun onDataChannelOpen() {
+                Log.d("PongVM", "WebRTC DataChannel open — switching to P2P transport")
+            }
+            override fun onDataChannelClose() {
+                Log.w("PongVM", "WebRTC DataChannel closed — falling back to Firebase")
+            }
+        })
     }
 
     private fun observeOnlineFlows(fb: FirebasePongManager) {
@@ -848,6 +941,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             fb.connectionState.collect { conn ->
                 _onlineState.update { it.copy(connectionState = conn) }
+                if (conn == OnlineConnectionState.CONNECTED) {
+                    startWebRtcSignaling(fb)
+                }
             }
         }
         viewModelScope.launch {
@@ -862,6 +958,20 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun startWebRtcSignaling(fb: FirebasePongManager) {
+        val rtc = webRtcManager ?: return
+        if (fb.role == BtRole.HOST) {
+            // Host: create offer, listen for ICE from client
+            fb.listenForRemoteIceCandidates { rtc.addRemoteIceCandidate(it) }
+            fb.listenForAnswer { rtc.receiveAnswer(it) }
+            rtc.createOffer()
+        } else {
+            // Client: wait for host's offer
+            fb.listenForRemoteIceCandidates { rtc.addRemoteIceCandidate(it) }
+            fb.listenForOffer { rtc.receiveOffer(it) }
+        }
+    }
+
     fun onlineCreateRoom() {
         firebaseManager?.createRoom()
     }
@@ -871,6 +981,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onlineDisconnect() {
+        webRtcManager?.cleanup()
+        webRtcManager = null
+        onlineObserveStarted = false
         firebaseManager?.cleanup()
         _onlineState.value = OnlineLobbyState()
     }
@@ -968,7 +1081,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             GameMode.ONLINE -> {
                 val fb = firebaseManager
                 if (fb?.isConnected == true && fb.role == BtRole.CLIENT) {
-                    fb.sendControl(BluetoothPongManager.CTRL_PAUSE)
+                    val rtc = webRtcManager
+                    if (rtc?.isOpen == true) rtc.sendControl(BluetoothPongManager.CTRL_PAUSE)
+                    else fb.sendControl(BluetoothPongManager.CTRL_PAUSE)
                 }
             }
             else -> {}
@@ -992,7 +1107,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                 val fb = firebaseManager ?: return
                 if (!fb.isConnected) return
                 if (fb.role == BtRole.CLIENT) {
-                    fb.sendControl(BluetoothPongManager.CTRL_TAP_START)
+                    val rtc = webRtcManager
+                    if (rtc?.isOpen == true) rtc.sendControl(BluetoothPongManager.CTRL_TAP_START)
+                    else fb.sendControl(BluetoothPongManager.CTRL_TAP_START)
                     return
                 }
             }
@@ -1019,6 +1136,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         btManager?.cleanup()
+        webRtcManager?.cleanup()
         firebaseManager?.cleanup()
         pongSound.release()
     }
