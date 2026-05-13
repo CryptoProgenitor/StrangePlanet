@@ -17,6 +17,8 @@ object PongDebugMetrics {
     val lastRoundTripMs = AtomicLong(0L)
     val pendingHitSentAtMs = AtomicLong(0L)
     val pendingHitRally = AtomicInteger(-1)
+    // 0=center 1=left75 2=right75 3=leftEdge 4=rightEdge 5=miss
+    val botSweepPhase = AtomicInteger(0)
 
     fun tickSecond() {
         packetsPerSec.set(packetsReceived.getAndSet(0))
@@ -30,11 +32,21 @@ object PongDebugMetrics {
         val meanSnap = if (count > 0) totalSnapPx.get() / count else 0f
         val pkts = packetsPerSec.get()
         val rtt = lastRoundTripMs.get()
+        val sweepPhase = botSweepPhase.get()
+        val sweepLabel = when (sweepPhase) {
+            0 -> "center"
+            1 -> "left75"
+            2 -> "right75"
+            3 -> "leftEdge"
+            4 -> "rightEdge"
+            5 -> "MISS"
+            else -> "$sweepPhase"
+        }
         Log.i(
             "PongMetrics",
             "hits_sent=$sent hits_adopted=$adopted ghost_suspects=${maxOf(0, sent - adopted)} " +
                 "last_snap_px=${"%.1f".format(snap)} mean_snap_px=${"%.1f".format(meanSnap)} " +
-                "pkts_per_sec=$pkts rtt_ms=$rtt",
+                "pkts_per_sec=$pkts rtt_ms=$rtt sweep=$sweepLabel",
         )
     }
 
@@ -49,5 +61,6 @@ object PongDebugMetrics {
         lastRoundTripMs.set(0L)
         pendingHitSentAtMs.set(0L)
         pendingHitRally.set(-1)
+        botSweepPhase.set(0)
     }
 }

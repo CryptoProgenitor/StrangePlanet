@@ -87,6 +87,20 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     // Bot auto-play: counts down to zero before triggering tap-to-start
     private var botStartCountdown = 0
 
+    // Bot sweep: cycles the paddle contact point across the full paddle width and into miss zones.
+    // sweepOffset is a fraction of halfPaddle; |offset| > 1.5 signals an intentional miss phase.
+    // playerTouchX = drBallX - sweepOffset * halfPaddle  → hitPos == sweepOffset at contact time.
+    private var botSweepPhase = 0
+    private var botSweepLastRally = -1
+    private val BOT_SWEEP_OFFSETS = floatArrayOf(
+        0.00f,   // center hit
+       -0.75f,   // 75% toward left edge
+        0.75f,   // 75% toward right edge
+       -0.95f,   // near left edge (95%)
+        0.95f,   // near right edge (95%)
+        2.00f,   // intentional miss — paddle placed at opposite side of screen
+    )
+
     fun initGame(screenWidth: Float, screenHeight: Float) {
         if (engine != null) return
 
@@ -143,7 +157,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // Bot auto-play: drive playerTouchX toward the ball
+                // Bot auto-play: systematic sweep across full paddle width + miss zones
                 if (_pongSettings.value.botModeEnabled) {
                     val botPhase = _gameState.value.phase
                     when (botPhase) {
@@ -153,14 +167,28 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         GamePhase.PLAYING -> {
                             val sw = _gameState.value.screenWidth
+                            val currentRally = _gameState.value.rally
+                            if (currentRally != botSweepLastRally && currentRally >= 0) {
+                                botSweepLastRally = currentRally
+                                botSweepPhase++
+                            }
                             if (sw > 0f) {
                                 val halfPaddle = e.paddleWidth / 2f
-                                val jitter = (Random.nextFloat() - 0.5f) * e.paddleWidth * 0.15f
-                                playerTouchX = (_gameState.value.ballX + jitter)
-                                    .coerceIn(halfPaddle, sw - halfPaddle)
+                                val offset = BOT_SWEEP_OFFSETS[botSweepPhase % BOT_SWEEP_OFFSETS.size]
+                                val ballX = _gameState.value.ballX
+                                playerTouchX = if (offset > 1.5f || offset < -1.5f) {
+                                    // Intentional miss: park paddle on the far side of the screen
+                                    if (ballX < sw / 2f) sw - halfPaddle else halfPaddle
+                                } else {
+                                    (ballX - offset * halfPaddle).coerceIn(halfPaddle, sw - halfPaddle)
+                                }
+                                PongDebugMetrics.botSweepPhase.set(botSweepPhase % BOT_SWEEP_OFFSETS.size)
                             }
                         }
-                        else -> botStartCountdown = 60
+                        else -> {
+                            botStartCountdown = 60
+                            botSweepLastRally = -1
+                        }
                     }
                 }
 
@@ -864,6 +892,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         lastProcessedRemoteState = null
         smoothAiPaddleX = 0f
         botStartCountdown = 0
+        botSweepPhase = 0
+        botSweepLastRally = -1
         PongDebugMetrics.reset()
     }
 
