@@ -451,8 +451,11 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     drVx = localVx; drVy = localVy
                     val ts = net.serverTimestamp
                     if (ts > 0L) {
-                        val dtMs = (firebaseManager!!.currentServerTimeMs() - ts)
-                            .coerceIn(0L, 500L)
+                        // WebRTC packets carry System.currentTimeMillis() from the host;
+                        // Firebase packets carry server time. Use the matching reference.
+                        val nowMs = if (webRtcManager?.isOpen == true) System.currentTimeMillis()
+                                    else firebaseManager?.currentServerTimeMs() ?: System.currentTimeMillis()
+                        val dtMs = (nowMs - ts).coerceIn(0L, 500L)
                         PongDebugMetrics.lastPacketAgeMs.set(dtMs)
                         val r = eng.ballRadius
                         var steps = (dtMs / 16f).toInt()
