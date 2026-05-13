@@ -366,18 +366,16 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     drVx = localVx; drVy = localVy
                 }
                 rallyChanged -> {
-                    // Only measure snap on hits (rally increments), not on serve resets after
-                    // a point (where ball teleports to centre, inflating the metric).
                     val wasHit = net.rally > drLastRally
                     if (wasHit) {
-                        val snapPx = hypot(localBallX - drBallX, localBallY - drBallY)
-                        PongDebugMetrics.lastSnapPx.set(snapPx)
-                        PongDebugMetrics.snapCount.incrementAndGet()
-                        PongDebugMetrics.totalSnapPx.set(PongDebugMetrics.totalSnapPx.get() + snapPx)
-                        // Infer adoption: if we had a pending hit and the rally incremented,
-                        // the host adopted our hit (or the serve resumed — close enough).
-                        // This avoids a second Firebase RTT vs explicit adoption ack.
                         if (clientHitSentThisRally) {
+                            // Rally incremented while we had a pending hit: host adopted our hit.
+                            // Measure snap only here (client-hit snaps only) — host-hit snaps are
+                            // irrelevant to ghost-paddle health and would inflate the metric.
+                            val snapPx = hypot(localBallX - drBallX, localBallY - drBallY)
+                            PongDebugMetrics.lastSnapPx.set(snapPx)
+                            PongDebugMetrics.snapCount.incrementAndGet()
+                            PongDebugMetrics.totalSnapPx.set(PongDebugMetrics.totalSnapPx.get() + snapPx)
                             PongDebugMetrics.clientHitsAdopted.incrementAndGet()
                             val rtt = System.currentTimeMillis() - PongDebugMetrics.pendingHitSentAtMs.get()
                             PongDebugMetrics.lastRoundTripMs.set(rtt)
@@ -429,11 +427,13 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // Client-side hit detection (every frame, not just on new packets)
+        // Note: do NOT clear clientHitSentThisRally on non-PLAYING phases here.
+        // The rallyChanged branch already clears it correctly. Clearing it on
+        // POINT_SCORED would lose the pending hit before the rally counter updates,
+        // causing ghost suspects even when the hit was actually adopted.
         val phase = GamePhase.entries.getOrElse(net.phaseOrdinal) { GamePhase.READY }
         if (phase == GamePhase.PLAYING && !clientHitSentThisRally) {
             tryDetectClientHit(net, eng, sw, sh)
-        } else if (phase != GamePhase.PLAYING) {
-            clientHitSentThisRally = false
         }
 
         // Opponent (host) paddle: lerp is still beneficial at 30 Hz
@@ -536,12 +536,17 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         PongDebugMetrics.clientHitsSent.incrementAndGet()
         PongDebugMetrics.pendingHitSentAtMs.set(System.currentTimeMillis())
 
-        // Send hit claim to host in host coordinate frame (Y flipped back)
+        // Send hit claim in host coordinate frame (Y flipped back).
+        // Normalise velocity by HOST screen dimensions so the host can multiply
+        // straight back by its own sw/sh — if screens differ, this prevents
+        // the velocity from being scaled by clientSW/hostSW on reconstruction.
+        val hostSW = if (net.hostScreenWidth > 0f) net.hostScreenWidth else sw
+        val hostSH = if (net.hostScreenHeight > 0f) net.hostScreenHeight else sh
         firebaseManager?.sendClientHit(
             bx = drBallX / sw,
             by = 1f - (drBallY / sh),
-            vx = drVx / sw,
-            vy = -(drVy / sh),                             // flip: client up → host positive-Y
+            vx = drVx / hostSW,
+            vy = -(drVy / hostSH),                         // flip: client up → host positive-Y
             rally = drLastRally,
         )
         if (_pongSettings.value.soundEnabled) pongSound.playPlayerHit()
