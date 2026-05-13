@@ -290,7 +290,6 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                                         )
                                     }
                                     newState = _gameState.value
-                                    firebaseManager?.sendAdoptionAck(pendingHit.rally)
                                     firebaseManager?.clearClientHit()
                                 }
                                 // else: ball not yet in playable state — keep pending hit for next frame
@@ -346,11 +345,15 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         if (sw <= 0f || sh <= 0f || net == null) return
 
         val isNewPacket = net !== lastProcessedRemoteState
+        // Use host screen dimensions for velocity reconstruction; fall back to client dims if
+        // the packet predates the hostScreenWidth field (e.g. first packet on old builds).
+        val hostSW = if (net.hostScreenWidth > 0f) net.hostScreenWidth else sw
+        val hostSH = if (net.hostScreenHeight > 0f) net.hostScreenHeight else sh
         // Ball position/velocity in client coordinate frame (Y flipped vs host)
         val localBallX = net.ballX * sw
         val localBallY = (1f - net.ballY) * sh
-        val localVx = net.ballVx * sw
-        val localVy = -(net.ballVy * sh)
+        val localVx = net.ballVx * hostSW
+        val localVy = -(net.ballVy * hostSH)
 
         if (isNewPacket) {
             lastProcessedRemoteState = net
@@ -371,6 +374,14 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         PongDebugMetrics.lastSnapPx.set(snapPx)
                         PongDebugMetrics.snapCount.incrementAndGet()
                         PongDebugMetrics.totalSnapPx.set(PongDebugMetrics.totalSnapPx.get() + snapPx)
+                        // Infer adoption: if we had a pending hit and the rally incremented,
+                        // the host adopted our hit (or the serve resumed — close enough).
+                        // This avoids a second Firebase RTT vs explicit adoption ack.
+                        if (clientHitSentThisRally) {
+                            PongDebugMetrics.clientHitsAdopted.incrementAndGet()
+                            val rtt = System.currentTimeMillis() - PongDebugMetrics.pendingHitSentAtMs.get()
+                            PongDebugMetrics.lastRoundTripMs.set(rtt)
+                        }
                     }
                     drBallX = localBallX; drBallY = localBallY
                     drVx = localVx; drVy = localVy
@@ -509,7 +520,6 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         clientHitSentThisRally = true
         PongDebugMetrics.clientHitsSent.incrementAndGet()
         PongDebugMetrics.pendingHitSentAtMs.set(System.currentTimeMillis())
-        PongDebugMetrics.pendingHitRally.set(drLastRally)
 
         // Send hit claim to host in host coordinate frame (Y flipped back)
         firebaseManager?.sendClientHit(
@@ -829,17 +839,6 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             fb.connectedPlayerName.collect { name ->
                 _onlineState.update { it.copy(connectedPlayerName = name, role = fb.role) }
-            }
-        }
-        viewModelScope.launch {
-            fb.remoteAdoptedRally.collect { adoptedRally ->
-                if (adoptedRally != null &&
-                    adoptedRally == PongDebugMetrics.pendingHitRally.get()
-                ) {
-                    PongDebugMetrics.clientHitsAdopted.incrementAndGet()
-                    val rtt = System.currentTimeMillis() - PongDebugMetrics.pendingHitSentAtMs.get()
-                    PongDebugMetrics.lastRoundTripMs.set(rtt)
-                }
             }
         }
     }

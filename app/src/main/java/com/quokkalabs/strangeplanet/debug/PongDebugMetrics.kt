@@ -16,7 +16,6 @@ object PongDebugMetrics {
     val packetsPerSec = AtomicInteger(0)
     val lastRoundTripMs = AtomicLong(0L)
     val pendingHitSentAtMs = AtomicLong(0L)
-    val pendingHitRally = AtomicInteger(-1)
     // 0=center 1=left75 2=right75 3=leftEdge 4=rightEdge 5=miss
     val botSweepPhase = AtomicInteger(0)
 
@@ -62,7 +61,6 @@ object PongDebugMetrics {
         packetsPerSec.set(0)
         lastRoundTripMs.set(0L)
         pendingHitSentAtMs.set(0L)
-        pendingHitRally.set(-1)
         botSweepPhase.set(0)
     }
 }

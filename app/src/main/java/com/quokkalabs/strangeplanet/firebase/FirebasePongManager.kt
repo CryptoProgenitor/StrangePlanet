@@ -33,7 +33,6 @@ class FirebasePongManager {
     private var joinedListener: ValueEventListener? = null
     private var roomExistsListener: ValueEventListener? = null
     private var clientHitListener: ValueEventListener? = null
-    private var adoptionAckListener: ValueEventListener? = null
 
     // ---- Public state flows ----
 
@@ -65,10 +64,6 @@ class FirebasePongManager {
 
     private val _remoteClientHit = MutableStateFlow<ClientHitEvent?>(null)
     val remoteClientHit: StateFlow<ClientHitEvent?> = _remoteClientHit.asStateFlow()
-
-    /** Rally value written by host after adopting a client hit; client observes this. */
-    private val _remoteAdoptedRally = MutableStateFlow<Int?>(null)
-    val remoteAdoptedRally: StateFlow<Int?> = _remoteAdoptedRally.asStateFlow()
 
     private val _connectedPlayerName = MutableStateFlow<String?>(null)
     val connectedPlayerName: StateFlow<String?> = _connectedPlayerName.asStateFlow()
@@ -145,7 +140,6 @@ class FirebasePongManager {
                 listenForGameState(ref)
                 listenForControl(ref, "host")
                 listenForRoomDeletion(ref)
-                listenForAdoptionAck(ref)
             } else {
                 Log.e(TAG, "Room not found: $upperCode")
                 _connectionState.value = OnlineConnectionState.IDLE
@@ -196,6 +190,8 @@ class FirebasePongManager {
             "st" to (saying?.second ?: ""),
             "hci" to hostCreatureIdx,
             "cci" to clientCreatureIdx,
+            "hsw" to sw.toDouble(),
+            "hsh" to sh.toDouble(),
         )
 
         ref.child("state").setValue(stateMap)
@@ -228,11 +224,6 @@ class FirebasePongManager {
 
     fun clearClientHit() {
         _remoteClientHit.value = null
-    }
-
-    /** Host → client: acknowledge that the client's hit was adopted, using the pre-hit rally. */
-    fun sendAdoptionAck(rally: Int) {
-        roomRef?.child("lastAdoptedRally")?.setValue(rally)
     }
 
     // ---- Control (both sides) ----
@@ -270,7 +261,6 @@ class FirebasePongManager {
         _remoteGameState.value = null
         _remoteControl.value = null
         _remoteClientHit.value = null
-        _remoteAdoptedRally.value = null
         _connectedPlayerName.value = null
         lastSendTime = 0L
     }
@@ -289,14 +279,12 @@ class FirebasePongManager {
         joinedListener?.let { roomRef?.child("clientJoined")?.removeEventListener(it) }
         roomExistsListener?.let { roomRef?.removeEventListener(it) }
         clientHitListener?.let { roomRef?.child("clientHit")?.removeEventListener(it) }
-        adoptionAckListener?.let { roomRef?.child("lastAdoptedRally")?.removeEventListener(it) }
         stateListener = null
         touchListener = null
         controlListener = null
         joinedListener = null
         roomExistsListener = null
         clientHitListener = null
-        adoptionAckListener = null
     }
 
     /** Host: listen for a client joining the room. */
@@ -381,6 +369,10 @@ class FirebasePongManager {
                             ?.toInt() ?: 0,
                         clientCreatureIdx = snapshot.child("cci").getValue(Long::class.java)
                             ?.toInt() ?: 0,
+                        hostScreenWidth = snapshot.child("hsw").getValue(Double::class.java)
+                            ?.toFloat() ?: 0f,
+                        hostScreenHeight = snapshot.child("hsh").getValue(Double::class.java)
+                            ?.toFloat() ?: 0f,
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to parse game state", e)
@@ -441,22 +433,6 @@ class FirebasePongManager {
             }
         }
         ref.child("clientHit").addValueEventListener(clientHitListener!!)
-    }
-
-    /** Client: receive adoption acknowledgements from the host after a client hit is adopted. */
-    private fun listenForAdoptionAck(ref: DatabaseReference) {
-        if (adoptionAckListener != null) return
-        adoptionAckListener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val rally = snapshot.getValue(Long::class.java)?.toInt() ?: return
-                _remoteAdoptedRally.value = rally
-            }
-
-            override fun onCancelled(error: DatabaseError) {
-                Log.e(TAG, "Adoption ack listener cancelled", error.toException())
-            }
-        }
-        ref.child("lastAdoptedRally").addValueEventListener(adoptionAckListener!!)
     }
 
     /** Client: detect if the host deleted the room (disconnected). */
