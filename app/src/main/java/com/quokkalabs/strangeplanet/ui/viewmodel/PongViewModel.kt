@@ -386,10 +386,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     clientHitSentThisRally = false
                 }
                 clientHitSentThisRally -> {
-                    // Client hit in-flight, not yet confirmed: keep client velocity,
-                    // apply only a hair of positional correction to absorb floating-point drift
-                    drBallX += (localBallX - drBallX) * 0.02f
-                    drBallY += (localBallY - drBallY) * 0.02f
+                    // Client hit in-flight: host is still broadcasting the PRE-hit trajectory.
+                    // Any lerp toward the host's position would drag drBallX back along the
+                    // wrong path, inflating the snap when adoption fires. Hold our position.
                 }
                 else -> {
                     // Normal packet: adopt host position/velocity exactly, then extrapolate
