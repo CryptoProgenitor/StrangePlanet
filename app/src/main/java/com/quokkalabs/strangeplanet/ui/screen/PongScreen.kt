@@ -74,7 +74,9 @@ import com.quokkalabs.strangeplanet.data.model.OnlineConnectionState
 import com.quokkalabs.strangeplanet.data.model.OnlineLobbyState
 import com.quokkalabs.strangeplanet.data.model.PongGameState
 import com.quokkalabs.strangeplanet.data.model.PongSettings
+import com.quokkalabs.strangeplanet.BuildConfig
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
+import com.quokkalabs.strangeplanet.ui.components.DebugHud
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CardPink
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
@@ -428,6 +430,15 @@ fun PongScreen(
                     }
                 }
 
+                // Debug HUD (debug builds only)
+                if (BuildConfig.DEBUG && settings.debugOverlayEnabled) {
+                    DebugHud(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 72.dp, end = 12.dp),
+                    )
+                }
+
                 // Settings modal
                 if (showSettings) {
                     SettingsModal(
@@ -435,6 +446,8 @@ fun PongScreen(
                         onSoundToggle = { viewModel.setSoundEnabled(it) },
                         onSayingsToggle = { viewModel.setShowSayings(it) },
                         onDifficulty = { viewModel.setDifficulty(it) },
+                        onBotModeToggle = { viewModel.setBotMode(it) },
+                        onDebugOverlayToggle = { viewModel.setDebugOverlay(it) },
                         onDismiss = { showSettings = false },
                         modifier = Modifier.align(Alignment.Center),
                     )
@@ -1374,6 +1387,8 @@ private fun SettingsModal(
     onSoundToggle: (Boolean) -> Unit,
     onSayingsToggle: (Boolean) -> Unit,
     onDifficulty: (DifficultyLevel) -> Unit,
+    onBotModeToggle: (Boolean) -> Unit,
+    onDebugOverlayToggle: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1450,6 +1465,27 @@ private fun SettingsModal(
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 )
             }
+        }
+
+        if (BuildConfig.DEBUG) {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "Debug:",
+                color = Color.White.copy(alpha = 0.3f),
+                fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            SettingsToggleRow(
+                label = "Bot Mode",
+                checked = settings.botModeEnabled,
+                onCheckedChange = onBotModeToggle,
+            )
+            Spacer(Modifier.height(8.dp))
+            SettingsToggleRow(
+                label = "Metrics Overlay",
+                checked = settings.debugOverlayEnabled,
+                onCheckedChange = onDebugOverlayToggle,
+            )
         }
 
         Spacer(Modifier.height(24.dp))

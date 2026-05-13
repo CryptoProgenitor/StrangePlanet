@@ -55,6 +55,8 @@ data class PongSettings(
     val soundEnabled: Boolean = true,
     val showSayings: Boolean = true,
     val difficulty: DifficultyLevel = DifficultyLevel.STANDARD,
+    val botModeEnabled: Boolean = false,
+    val debugOverlayEnabled: Boolean = false,
 )
 
 data class BallTrailPoint(val x: Float, val y: Float)

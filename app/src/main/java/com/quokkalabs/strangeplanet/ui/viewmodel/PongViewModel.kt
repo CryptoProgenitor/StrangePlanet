@@ -31,7 +31,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
+import kotlin.random.Random
+import com.quokkalabs.strangeplanet.debug.PongDebugMetrics
 
 class PongViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -81,12 +84,25 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
     // Lerp for opponent (host) paddle – still useful at 30 Hz
     private var smoothAiPaddleX = 0f
 
+    // Bot auto-play: counts down to zero before triggering tap-to-start
+    private var botStartCountdown = 0
+
     fun initGame(screenWidth: Float, screenHeight: Float) {
         if (engine != null) return
 
         val eng = PongEngine(screenWidth, screenHeight, _pongSettings.value.difficulty)
         engine = eng
         _gameState.value = eng.createInitialState()
+
+        viewModelScope.launch {
+            while (isActive) {
+                delay(1000)
+                if (_gameState.value.gameMode == GameMode.ONLINE) {
+                    PongDebugMetrics.tickSecond()
+                    if (_pongSettings.value.debugOverlayEnabled) PongDebugMetrics.emitLogcat()
+                }
+            }
+        }
 
         viewModelScope.launch {
             while (isActive) {
@@ -124,6 +140,27 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         mpRemoteTouchX = null
                         mpRemoteState = null
                         mpRemoteControl = null
+                    }
+                }
+
+                // Bot auto-play: drive playerTouchX toward the ball
+                if (_pongSettings.value.botModeEnabled) {
+                    val botPhase = _gameState.value.phase
+                    when (botPhase) {
+                        GamePhase.READY, GamePhase.GAME_OVER -> {
+                            if (botStartCountdown == 0) botStartCountdown = 60
+                            if (--botStartCountdown == 0) onTapToStart()
+                        }
+                        GamePhase.PLAYING -> {
+                            val sw = _gameState.value.screenWidth
+                            if (sw > 0f) {
+                                val halfPaddle = e.paddleWidth / 2f
+                                val jitter = (Random.nextFloat() - 0.5f) * e.paddleWidth * 0.15f
+                                playerTouchX = (_gameState.value.ballX + jitter)
+                                    .coerceIn(halfPaddle, sw - halfPaddle)
+                            }
+                        }
+                        else -> botStartCountdown = 60
                     }
                 }
 
@@ -206,6 +243,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                                     )
                                 }
                                 newState = _gameState.value
+                                firebaseManager?.sendAdoptionAck(pendingHit.rally)
                             }
                             firebaseManager?.clearClientHit()
                         }
@@ -267,6 +305,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
         if (isNewPacket) {
             lastProcessedRemoteState = net
+            PongDebugMetrics.packetsReceived.incrementAndGet()
             val rallyChanged = net.rally != drLastRally && drLastRally >= 0
             when {
                 drLastRally < 0 -> {
@@ -276,6 +315,10 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 rallyChanged -> {
                     // Hit or serve confirmed by host: snap (hidden inside hit-event visual noise)
+                    val snapPx = hypot(localBallX - drBallX, localBallY - drBallY)
+                    PongDebugMetrics.lastSnapPx.set(snapPx)
+                    PongDebugMetrics.snapCount.incrementAndGet()
+                    PongDebugMetrics.totalSnapPx.set(PongDebugMetrics.totalSnapPx.get() + snapPx)
                     drBallX = localBallX; drBallY = localBallY
                     drVx = localVx; drVy = localVy
                     clientHitSentThisRally = false
@@ -411,6 +454,9 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         drVy = -speed * cos(angle)                         // going up in client frame
         drBallY = paddleSurface - eng.ballRadius
         clientHitSentThisRally = true
+        PongDebugMetrics.clientHitsSent.incrementAndGet()
+        PongDebugMetrics.pendingHitSentAtMs.set(System.currentTimeMillis())
+        PongDebugMetrics.pendingHitRally.set(drLastRally)
 
         // Send hit claim to host in host coordinate frame (Y flipped back)
         firebaseManager?.sendClientHit(
@@ -557,6 +603,15 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setShowSayings(show: Boolean) {
         _pongSettings.update { it.copy(showSayings = show) }
+    }
+
+    fun setBotMode(enabled: Boolean) {
+        _pongSettings.update { it.copy(botModeEnabled = enabled) }
+        if (!enabled) botStartCountdown = 0
+    }
+
+    fun setDebugOverlay(enabled: Boolean) {
+        _pongSettings.update { it.copy(debugOverlayEnabled = enabled) }
     }
 
     fun setDifficulty(level: DifficultyLevel) {
@@ -723,6 +778,17 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                 _onlineState.update { it.copy(connectedPlayerName = name, role = fb.role) }
             }
         }
+        viewModelScope.launch {
+            fb.remoteAdoptedRally.collect { adoptedRally ->
+                if (adoptedRally != null &&
+                    adoptedRally == PongDebugMetrics.pendingHitRally.get()
+                ) {
+                    PongDebugMetrics.clientHitsAdopted.incrementAndGet()
+                    val rtt = System.currentTimeMillis() - PongDebugMetrics.pendingHitSentAtMs.get()
+                    PongDebugMetrics.lastRoundTripMs.set(rtt)
+                }
+            }
+        }
     }
 
     fun onlineCreateRoom() {
@@ -797,6 +863,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         clientHitSentThisRally = false
         lastProcessedRemoteState = null
         smoothAiPaddleX = 0f
+        botStartCountdown = 0
+        PongDebugMetrics.reset()
     }
 
     // ---- Pause ----
