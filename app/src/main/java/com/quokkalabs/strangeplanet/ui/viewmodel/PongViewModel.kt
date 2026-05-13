@@ -272,26 +272,29 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         if (pendingHit != null) {
                             val sw = newState.screenWidth
                             val sh = newState.screenHeight
-                            val hostJustHit = newState.aiHitPulse > prevState.aiHitPulse
-                            val ballNearAiZone = newState.phase == GamePhase.PLAYING
-                                && newState.ballY >= 0f
-                                && newState.ballY <= e.aiPaddleY + e.paddleHeight + sh * 0.20f
                             val rallyMatch = pendingHit.rally == prevState.rally
-                            if (!hostJustHit && ballNearAiZone && rallyMatch) {
-                                _gameState.update { s ->
-                                    s.copy(
-                                        ballVx = pendingHit.vx * sw,
-                                        ballVy = pendingHit.vy * sh,
-                                        ballX = (pendingHit.bx * sw).coerceIn(e.ballRadius, sw - e.ballRadius),
-                                        ballY = (pendingHit.by * sh).coerceIn(0f, sh),
-                                        aiHitPulse = 1f,
-                                        rally = s.rally + 1,
-                                    )
+                            if (!rallyMatch) {
+                                // Stale event (rally already moved on) — discard without adopting
+                                firebaseManager?.clearClientHit()
+                            } else {
+                                val hostJustHit = newState.aiHitPulse > prevState.aiHitPulse
+                                if (!hostJustHit && newState.phase == GamePhase.PLAYING) {
+                                    _gameState.update { s ->
+                                        s.copy(
+                                            ballVx = pendingHit.vx * sw,
+                                            ballVy = pendingHit.vy * sh,
+                                            ballX = (pendingHit.bx * sw).coerceIn(e.ballRadius, sw - e.ballRadius),
+                                            ballY = (pendingHit.by * sh).coerceIn(0f, sh),
+                                            aiHitPulse = 1f,
+                                            rally = s.rally + 1,
+                                        )
+                                    }
+                                    newState = _gameState.value
+                                    firebaseManager?.sendAdoptionAck(pendingHit.rally)
+                                    firebaseManager?.clearClientHit()
                                 }
-                                newState = _gameState.value
-                                firebaseManager?.sendAdoptionAck(pendingHit.rally)
+                                // else: ball not yet in playable state — keep pending hit for next frame
                             }
-                            firebaseManager?.clearClientHit()
                         }
                     }
 
@@ -360,11 +363,15 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     drVx = localVx; drVy = localVy
                 }
                 rallyChanged -> {
-                    // Hit or serve confirmed by host: snap (hidden inside hit-event visual noise)
-                    val snapPx = hypot(localBallX - drBallX, localBallY - drBallY)
-                    PongDebugMetrics.lastSnapPx.set(snapPx)
-                    PongDebugMetrics.snapCount.incrementAndGet()
-                    PongDebugMetrics.totalSnapPx.set(PongDebugMetrics.totalSnapPx.get() + snapPx)
+                    // Only measure snap on hits (rally increments), not on serve resets after
+                    // a point (where ball teleports to centre, inflating the metric).
+                    val wasHit = net.rally > drLastRally
+                    if (wasHit) {
+                        val snapPx = hypot(localBallX - drBallX, localBallY - drBallY)
+                        PongDebugMetrics.lastSnapPx.set(snapPx)
+                        PongDebugMetrics.snapCount.incrementAndGet()
+                        PongDebugMetrics.totalSnapPx.set(PongDebugMetrics.totalSnapPx.get() + snapPx)
+                    }
                     drBallX = localBallX; drBallY = localBallY
                     drVx = localVx; drVy = localVy
                     clientHitSentThisRally = false
