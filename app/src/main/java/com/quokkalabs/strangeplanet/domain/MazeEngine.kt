@@ -358,19 +358,24 @@ class MazeEngine(
      * queued turn (the input queue). Movement, turning, eating and seeker
      * resolution all happen here; rendering reads the resulting state.
      */
-    fun update(state: PacGameState, requestedDir: PacDir?): PacGameState {
+    fun update(
+        state: PacGameState,
+        requestedDir: PacDir?,
+        speedFactor: Float = 1f,
+    ): PacGameState {
         val queued = requestedDir ?: PacDir.NONE
         return when (state.phase) {
             PacPhase.PLAYING -> updatePlaying(
                 if (queued != PacDir.NONE)
                     state.copy(being = state.being.copy(queuedDir = queued))
                 else state,
+                speedFactor = speedFactor.coerceIn(0f, 1f),
             )
             else -> state
         }
     }
 
-    private fun updatePlaying(state: PacGameState): PacGameState {
+    private fun updatePlaying(state: PacGameState, speedFactor: Float = 1f): PacGameState {
         var b = state.being
         var col = b.col
         var row = b.row
@@ -403,7 +408,7 @@ class MazeEngine(
                 progress = 1f - progress
             }
 
-            val speed = BASE_SPEED * (1f + (state.level - 1) * 0.06f)
+            val speed = BASE_SPEED * speedFactor * (1f + (state.level - 1) * 0.06f)
             progress += speed
 
             // Resolve every whole tile crossed this tick (speed < 1, so ≤ 1).

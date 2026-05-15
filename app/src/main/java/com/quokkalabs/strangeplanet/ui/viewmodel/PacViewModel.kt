@@ -35,12 +35,17 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
             avatar = runCatching {
                 PacAvatar.valueOf(prefs.getString(KEY_AVATAR, PacAvatar.BEING.name)!!)
             }.getOrDefault(PacAvatar.BEING),
+            joypadEnabled = prefs.getBoolean(KEY_JOYPAD, false),
         ),
     )
     val pacSettings: StateFlow<PacSettings> = _pacSettings.asStateFlow()
 
-    // Latest swipe-derived intent, consumed once by the next tick.
+    // Swipe mode: consumed once by the next tick.
     private var pendingDir: PacDir? = null
+
+    // Joystick mode: persistent until the joystick moves; speed 0 = halted.
+    @Volatile private var joystickDir: PacDir = PacDir.NONE
+    @Volatile private var joystickSpeed: Float = 0f
 
     private var screenW = 0f
     private var screenH = 0f
@@ -64,9 +69,15 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
             while (isActive) {
                 delay(16)
                 val e = engine ?: continue
-                val dir = pendingDir
-                pendingDir = null
-                _state.update { e.update(it, dir) }
+                if (_pacSettings.value.joypadEnabled) {
+                    val dir = joystickDir
+                    val speed = joystickSpeed
+                    _state.update { e.update(it, if (dir == PacDir.NONE) null else dir, speed) }
+                } else {
+                    val dir = pendingDir
+                    pendingDir = null
+                    _state.update { e.update(it, dir) }
+                }
 
                 when (_state.value.phase) {
                     PacPhase.LEVEL_CLEARED -> {
@@ -122,11 +133,24 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Called continuously by the joystick composable. [dir] is the dominant-
+     * axis direction (NONE in the dead zone), [speed] is 0..1 proportional to
+     * displacement.
+     */
+    fun onJoystick(dir: PacDir, speed: Float) {
+        joystickDir = dir
+        joystickSpeed = speed
+        if (speed > 0f && _state.value.phase == PacPhase.READY) onTapToStart()
+    }
+
     fun resetGame() {
         val e = engine ?: return
         commitHighScore(_state.value.score)
         _state.value = e.createInitialState(highScore = highScore)
         pendingDir = null
+        joystickDir = PacDir.NONE
+        joystickSpeed = 0f
     }
 
     fun pauseGame() {
@@ -154,10 +178,18 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putString(KEY_AVATAR, avatar.name).apply()
     }
 
+    fun setJoypadEnabled(enabled: Boolean) {
+        _pacSettings.update { it.copy(joypadEnabled = enabled) }
+        prefs.edit().putBoolean(KEY_JOYPAD, enabled).apply()
+        joystickDir = PacDir.NONE
+        joystickSpeed = 0f
+    }
+
     private companion object {
         const val KEY_HIGH_SCORE = "high_score"
         const val KEY_SOUND = "sound_enabled"
         const val KEY_SAYINGS = "show_sayings"
         const val KEY_AVATAR = "avatar"
+        const val KEY_JOYPAD = "joypad_enabled"
     }
 }

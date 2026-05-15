@@ -53,6 +53,7 @@ data class PacSettings(
     val soundEnabled: Boolean = true,
     val showSayings: Boolean = true,
     val avatar: PacAvatar = PacAvatar.BEING,
+    val joypadEnabled: Boolean = false,
 )
 
 /**

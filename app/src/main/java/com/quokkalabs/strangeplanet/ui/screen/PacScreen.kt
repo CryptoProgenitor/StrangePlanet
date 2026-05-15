@@ -75,6 +75,7 @@ import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.viewmodel.PacViewModel
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.sin
 
 @Composable
@@ -171,36 +172,52 @@ fun PacScreen(
                 viewModel.initGame(screenWidth, screenHeight)
             }
 
-            // Swipe-anywhere control + tap-to-(re)start.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        var dx = 0f
-                        var dy = 0f
-                        detectDragGestures(
-                            onDragStart = { dx = 0f; dy = 0f },
-                            onDragEnd = { dx = 0f; dy = 0f },
-                        ) { change, drag ->
-                            change.consume()
-                            dx += drag.x
-                            dy += drag.y
-                            if (abs(dx) > swipeThreshold || abs(dy) > swipeThreshold) {
-                                val dir = if (abs(dx) > abs(dy)) {
-                                    if (dx > 0) PacDir.RIGHT else PacDir.LEFT
-                                } else {
-                                    if (dy > 0) PacDir.DOWN else PacDir.UP
+            if (settings.joypadEnabled) {
+                // Joystick mode: top area is tap-to-start only; bottom zone
+                // hosts the analogue stick.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { viewModel.onTapToStart() })
+                        },
+                )
+                PacJoypad(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    onJoystick = viewModel::onJoystick,
+                )
+            } else {
+                // Swipe-anywhere control + tap-to-(re)start.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            var dx = 0f
+                            var dy = 0f
+                            detectDragGestures(
+                                onDragStart = { dx = 0f; dy = 0f },
+                                onDragEnd = { dx = 0f; dy = 0f },
+                            ) { change, drag ->
+                                change.consume()
+                                dx += drag.x
+                                dy += drag.y
+                                if (abs(dx) > swipeThreshold || abs(dy) > swipeThreshold) {
+                                    val dir = if (abs(dx) > abs(dy)) {
+                                        if (dx > 0) PacDir.RIGHT else PacDir.LEFT
+                                    } else {
+                                        if (dy > 0) PacDir.DOWN else PacDir.UP
+                                    }
+                                    viewModel.onSwipe(dir)
+                                    dx = 0f
+                                    dy = 0f
                                 }
-                                viewModel.onSwipe(dir)
-                                dx = 0f
-                                dy = 0f
                             }
                         }
-                    }
-                    .pointerInput(Unit) {
-                        detectTapGestures(onTap = { viewModel.onTapToStart() })
-                    },
-            )
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { viewModel.onTapToStart() })
+                        },
+                )
+            }
 
             if (state.tileSize > 0f) {
                 val ts = state.tileSize
@@ -428,6 +445,7 @@ fun PacScreen(
                     onAvatar = viewModel::setAvatar,
                     onSound = viewModel::setSoundEnabled,
                     onSayings = viewModel::setShowSayings,
+                    onJoypad = viewModel::setJoypadEnabled,
                     onClose = {
                         showSettings = false
                         viewModel.resumeGame()
@@ -444,6 +462,7 @@ private fun BoxScope.PacSettingsPanel(
     onAvatar: (PacAvatar) -> Unit,
     onSound: (Boolean) -> Unit,
     onSayings: (Boolean) -> Unit,
+    onJoypad: (Boolean) -> Unit,
     onClose: () -> Unit,
 ) {
     Box(
@@ -492,6 +511,7 @@ private fun BoxScope.PacSettingsPanel(
             Spacer(Modifier.height(12.dp))
             ToggleRow("AUDIBLE FEEDBACK", settings.soundEnabled) { onSound(!settings.soundEnabled) }
             ToggleRow("DEADPAN COMMENTARY", settings.showSayings) { onSayings(!settings.showSayings) }
+            ToggleRow("ANALOGUE LOCOMOTION", settings.joypadEnabled) { onJoypad(!settings.joypadEnabled) }
             Spacer(Modifier.height(18.dp))
             Text(
                 "RESUME ACTIVITY",
@@ -662,5 +682,98 @@ private fun BoxScope.CenterBanner(
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+/**
+ * Analogue joystick zone pinned to the bottom of the screen.
+ *
+ * Displacement from centre → dominant axis (PacDir) + proportional speed
+ * [0..1]. Inside the dead zone both are NONE/0 so the being halts. The
+ * caller receives a continuous stream of updates via [onJoystick].
+ */
+@Composable
+private fun PacJoypad(
+    modifier: Modifier = Modifier,
+    onJoystick: (PacDir, Float) -> Unit,
+) {
+    val density = LocalDensity.current
+    val baseRadiusDp = 56.dp
+    val thumbRadiusDp = 22.dp
+    val deadZone = 0.15f
+
+    var thumbOffset by remember { mutableStateOf(Offset.Zero) }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(140.dp)
+            .background(DeepNavy.copy(alpha = 0.55f))
+            .pointerInput(Unit) {
+                val baseR = with(density) { baseRadiusDp.toPx() }
+                detectDragGestures(
+                    onDragStart = { thumbOffset = Offset.Zero },
+                    onDragEnd = {
+                        thumbOffset = Offset.Zero
+                        onJoystick(PacDir.NONE, 0f)
+                    },
+                    onDragCancel = {
+                        thumbOffset = Offset.Zero
+                        onJoystick(PacDir.NONE, 0f)
+                    },
+                ) { change, drag ->
+                    change.consume()
+                    val raw = thumbOffset + drag
+                    val dist = hypot(raw.x, raw.y)
+                    thumbOffset = if (dist <= baseR) raw else raw * (baseR / dist)
+
+                    val magnitude = hypot(thumbOffset.x, thumbOffset.y) / baseR
+                    if (magnitude < deadZone) {
+                        onJoystick(PacDir.NONE, 0f)
+                    } else {
+                        val dir = if (abs(thumbOffset.x) > abs(thumbOffset.y)) {
+                            if (thumbOffset.x > 0) PacDir.RIGHT else PacDir.LEFT
+                        } else {
+                            if (thumbOffset.y > 0) PacDir.DOWN else PacDir.UP
+                        }
+                        // Map [deadZone..1] → [0.30..1.0] so even a small push
+                        // gives noticeable movement.
+                        val speed = ((magnitude - deadZone) / (1f - deadZone))
+                            .coerceIn(0f, 1f) * 0.70f + 0.30f
+                        onJoystick(dir, speed)
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(baseRadiusDp * 2)) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val baseR = size.width / 2f
+            val thumbR = with(density) { thumbRadiusDp.toPx() }
+            // Base ring.
+            drawCircle(
+                color = AlienPink.copy(alpha = 0.18f),
+                radius = baseR,
+                center = Offset(cx, cy),
+            )
+            drawCircle(
+                color = AlienPink.copy(alpha = 0.40f),
+                radius = baseR,
+                center = Offset(cx, cy),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f),
+            )
+            // Thumb.
+            drawCircle(
+                color = AlienPink.copy(alpha = 0.75f),
+                radius = thumbR,
+                center = Offset(cx + thumbOffset.x, cy + thumbOffset.y),
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.25f),
+                radius = thumbR * 0.45f,
+                center = Offset(cx + thumbOffset.x, cy + thumbOffset.y),
+            )
+        }
     }
 }
