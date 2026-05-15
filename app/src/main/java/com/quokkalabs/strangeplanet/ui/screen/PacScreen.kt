@@ -110,7 +110,7 @@ fun PacScreen(
 
     val swipeThreshold = with(density) { 24.dp.toPx() }
 
-    CosmicBackground(showStars = true) {
+    CosmicBackground(showStars = false) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val screenWidth = with(density) { maxWidth.toPx() }
             val screenHeight = with(density) { maxHeight.toPx() }
@@ -214,9 +214,9 @@ fun PacScreen(
                     val bSz = (ts * 1.5f).toInt()
                     // Halo glow — concentric soft rings make the being pop
                     // against the busy background.
-                    drawCircle(AlienPink.copy(alpha = 0.18f), ts * 1.05f, Offset(bx, by))
-                    drawCircle(AlienPink.copy(alpha = 0.10f), ts * 0.78f, Offset(bx, by))
-                    drawCircle(AlienPink.copy(alpha = 0.06f), ts * 0.52f, Offset(bx, by))
+                    drawCircle(AlienPink.copy(alpha = 0.38f), ts * 1.40f, Offset(bx, by))
+                    drawCircle(AlienPink.copy(alpha = 0.28f), ts * 1.05f, Offset(bx, by))
+                    drawCircle(AlienPink.copy(alpha = 0.18f), ts * 0.72f, Offset(bx, by))
                     drawImage(
                         image = avatarBitmap,
                         dstOffset = IntOffset(
