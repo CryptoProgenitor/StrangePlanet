@@ -32,6 +32,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -166,17 +167,35 @@ fun AsteroidScreen(
                     drawCircle(ufoBulletColor, sMin * 0.011f, Offset(b.x, b.y))
                 }
 
-                // UFO — procedural saucer.
+                // UFO — procedural saucer. Warm colours + dark outline so it
+                // never blends into the blue/purple backdrop.
                 state.ufo?.let { u ->
                     val w = ufoR(sMin) * 2.4f
                     val h = ufoR(sMin) * 1.0f
+                    val bodyColor = Color(0xFFFF6F3C)
+                    val domeColor = Color(0xFFFFE08A)
+                    val outline = Color(0xFF1A0E2E)
+                    // Dark halo for separation from the background.
                     drawOval(
-                        color = CosmicBlue,
+                        color = outline.copy(alpha = 0.55f),
+                        topLeft = Offset(u.x - w * 0.58f, u.y - h * 0.62f),
+                        size = Size(w * 1.16f, h * 1.24f),
+                    )
+                    drawOval(
+                        color = bodyColor,
                         topLeft = Offset(u.x - w / 2f, u.y - h / 2f),
                         size = Size(w, h),
                     )
+                    drawOval(
+                        color = outline,
+                        topLeft = Offset(u.x - w / 2f, u.y - h / 2f),
+                        size = Size(w, h),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = sMin * 0.004f,
+                        ),
+                    )
                     drawArc(
-                        color = AlienPink,
+                        color = domeColor,
                         startAngle = 180f,
                         sweepAngle = 180f,
                         useCenter = true,
@@ -302,19 +321,19 @@ fun AsteroidScreen(
 
             // Control bar. Default order: ◀ ▲ ✦ ● ▶.
             // Alternate (settings): ● ▲ ✦ ◀ ▶ (fire, thrust, hyper, L, R).
-            val rotLeft = ControlAction("◀",
+            val rotLeft = ControlAction("◀", "LEFT",
                 { viewModel.setInput { it.copy(rotLeft = true) } },
                 { viewModel.setInput { it.copy(rotLeft = false) } })
-            val thrust = ControlAction("▲",
+            val thrust = ControlAction("▲", "THRUST",
                 { viewModel.setInput { it.copy(thrust = true) } },
                 { viewModel.setInput { it.copy(thrust = false) } })
-            val hyper = ControlAction("✦",
+            val hyper = ControlAction("✦", "HYPER",
                 { viewModel.setInput { it.copy(hyperspace = true) } },
                 { viewModel.setInput { it.copy(hyperspace = false) } })
-            val fire = ControlAction("●",
+            val fire = ControlAction("●", "FIRE",
                 { viewModel.setInput { it.copy(fire = true) } },
                 { viewModel.setInput { it.copy(fire = false) } })
-            val rotRight = ControlAction("▶",
+            val rotRight = ControlAction("▶", "RIGHT",
                 { viewModel.setInput { it.copy(rotRight = true) } },
                 { viewModel.setInput { it.copy(rotRight = false) } })
 
@@ -331,7 +350,13 @@ fun AsteroidScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 controls.forEach { c ->
-                    HoldButton(c.label, Modifier.weight(1f), c.onPress, c.onRelease)
+                    HoldButton(
+                        glyph = c.glyph,
+                        caption = c.caption,
+                        modifier = Modifier.weight(1f),
+                        onPress = c.onPress,
+                        onRelease = c.onRelease,
+                    )
                 }
             }
 
@@ -369,7 +394,8 @@ fun AsteroidScreen(
 }
 
 private data class ControlAction(
-    val label: String,
+    val glyph: String,
+    val caption: String,
     val onPress: () -> Unit,
     val onRelease: () -> Unit,
 )
@@ -483,11 +509,17 @@ private fun DisposableEdgeToEdge(view: android.view.View) {
 
 @Composable
 private fun HoldButton(
-    label: String,
+    glyph: String,
+    caption: String,
     modifier: Modifier,
     onPress: () -> Unit,
     onRelease: () -> Unit,
 ) {
+    // rememberUpdatedState keeps the gesture coroutine stable while always
+    // invoking the *current* handlers — without this, pointerInput(Unit)
+    // would keep the stale lambdas after the layout is re-ordered.
+    val press by rememberUpdatedState(onPress)
+    val release by rememberUpdatedState(onRelease)
     Box(
         modifier = modifier
             .height(64.dp)
@@ -495,15 +527,30 @@ private fun HoldButton(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
-                        onPress()
+                        press()
                         tryAwaitRelease()
-                        onRelease()
+                        release()
                     },
                 )
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = AlienPink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                glyph,
+                color = AlienPink,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                caption,
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
     }
 }
 
