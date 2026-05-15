@@ -59,6 +59,7 @@ import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
+import com.quokkalabs.strangeplanet.ui.viewmodel.PacViewModel
 import kotlin.math.abs
 
 @Composable
