@@ -12,19 +12,21 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quokkalabs.strangeplanet.ui.screen.InteractiveScreen
+import com.quokkalabs.strangeplanet.ui.screen.AsteroidScreen
 import com.quokkalabs.strangeplanet.ui.screen.PlanetaryBulletin
 import com.quokkalabs.strangeplanet.ui.screen.PacScreen
 import com.quokkalabs.strangeplanet.ui.screen.PongScreen
 import com.quokkalabs.strangeplanet.ui.screen.SettingsScreen
 import com.quokkalabs.strangeplanet.ui.screen.SpaceInvadersScreen
 import com.quokkalabs.strangeplanet.ui.theme.StrangePlanetTheme
+import com.quokkalabs.strangeplanet.ui.viewmodel.AsteroidViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.PacViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.PongViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.SpaceInvadersViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.StrangePlanetViewModel
 
 private enum class Screen {
-    INTERACTIVE, SETTINGS, PONG, SPACE_INVADERS, PACMAN
+    INTERACTIVE, SETTINGS, PONG, SPACE_INVADERS, PACMAN, ASTEROIDS
 }
 
 class MainActivity : ComponentActivity() {
@@ -70,6 +72,13 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = Screen.INTERACTIVE },
                             )
                         }
+                        Screen.ASTEROIDS -> {
+                            val asteroidViewModel: AsteroidViewModel = viewModel()
+                            AsteroidScreen(
+                                viewModel = asteroidViewModel,
+                                onBack = { screen = Screen.INTERACTIVE },
+                            )
+                        }
                     }
 
                     if (showBulletin && screen == Screen.INTERACTIVE) {
@@ -85,6 +94,10 @@ class MainActivity : ComponentActivity() {
                             onNavigateToPacman = {
                                 showBulletin = false
                                 screen = Screen.PACMAN
+                            },
+                            onNavigateToAsteroids = {
+                                showBulletin = false
+                                screen = Screen.ASTEROIDS
                             },
                             onNavigateToSettings = {
                                 showBulletin = false

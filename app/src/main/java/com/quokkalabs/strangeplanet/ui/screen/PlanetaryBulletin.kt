@@ -38,6 +38,7 @@ fun PlanetaryBulletin(
     onNavigateToGame: () -> Unit,
     onNavigateToSpaceInvaders: () -> Unit,
     onNavigateToPacman: () -> Unit,
+    onNavigateToAsteroids: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -136,6 +137,15 @@ fun PlanetaryBulletin(
                 title = "Sustenance Pursuit",
                 subtitle = "Consume stars; evade perished beings",
                 onClick = onNavigateToPacman,
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            BulletinCard(
+                emoji = "🌀",
+                title = "Spatial Debris Avoidance",
+                subtitle = "Neutralise drifting fabric tubes",
+                onClick = onNavigateToAsteroids,
             )
 
             Spacer(Modifier.height(10.dp))
