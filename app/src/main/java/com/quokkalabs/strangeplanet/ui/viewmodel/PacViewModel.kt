@@ -171,12 +171,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(phase = PacPhase.GAME_OVER, highScore = highScore)
                     }
                 } else {
-                    _state.value = e.createInitialState(
-                        level = s.level,
-                        score = s.score,
-                        lives = s.lives,
-                        highScore = highScore,
-                    ).copy(phase = PacPhase.PLAYING)
+                    _state.value = e.respawnEntities(s)
                 }
             }
             else -> {}
@@ -211,15 +206,9 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     btManager?.sendTick(_state.value, emptyList(), emptyList())
                 } else {
-                    _state.value = e.createInitialState(
-                        level = s.level,
-                        score = s.score,
-                        lives = s.lives,
-                        highScore = highScore,
-                        mode = PacMode.BT_HOST,
-                        controlledSeekerType = s.controlledSeekerType,
-                    ).copy(phase = PacPhase.PLAYING)
-                    needsInitBroadcast = true
+                    // Pellets are preserved — no MSG_INIT needed; the client
+                    // already holds the correct maze state via prior deltas.
+                    _state.value = e.respawnEntities(s)
                     broadcastHost(_state.value, _state.value, force = true)
                 }
             }

@@ -424,6 +424,26 @@ class MazeEngine(
         )
     }
 
+    /**
+     * Resets entity positions after a mid-level death without touching the maze.
+     * Pellets, socks, score, and level are preserved; only the being, seekers,
+     * wave timer, and frightened state are returned to their level-start values.
+     */
+    fun respawnEntities(state: PacGameState): PacGameState = state.copy(
+        being = PacEntity(col = penCol, row = penRow),
+        seekers = listOf(
+            SeekerEntity(type = SeekerType.MINUTE_REMINDER, col = 16, row = 3),
+            SeekerEntity(type = SeekerType.SOCIAL_ANXIETY, col = 2, row = 3),
+            SeekerEntity(type = SeekerType.LOGICAL_DEBATER, col = 16, row = 13),
+            SeekerEntity(type = SeekerType.OPTIONAL_OBLIGATION, col = 2, row = 13),
+        ),
+        waveTick = 0,
+        frightenedTick = 0,
+        frightenedCombo = 0,
+        activeSaying = null,
+        phase = PacPhase.PLAYING,
+    )
+
     fun startGame(state: PacGameState): PacGameState =
         if (state.phase == PacPhase.READY) state.copy(phase = PacPhase.PLAYING) else state
 
