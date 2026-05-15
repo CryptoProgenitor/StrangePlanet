@@ -263,6 +263,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.mode != PacMode.SOLO) return
         when (_state.value.phase) {
             PacPhase.READY -> _state.value = e.startGame(_state.value)
+            PacPhase.PAUSED -> _state.value = e.resumeGame(_state.value)
             PacPhase.GAME_OVER -> {
                 _state.value = e.createInitialState(highScore = highScore)
                 _state.value = e.startGame(_state.value)

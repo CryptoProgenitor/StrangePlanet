@@ -60,6 +60,7 @@ import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.InvaderType
 import com.quokkalabs.strangeplanet.data.model.SIPhase
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
+import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.theme.SoftPink
@@ -76,6 +77,9 @@ fun SpaceInvadersScreen(
     val density = LocalDensity.current
     val view = LocalView.current
     val context = LocalContext.current
+
+    // Screen off / app backgrounded → suspend play.
+    PauseOnBackground { viewModel.pauseGame() }
 
     // Immersive mode
     DisposableEffect(Unit) {

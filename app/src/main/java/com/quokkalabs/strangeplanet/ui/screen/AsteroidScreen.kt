@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -58,7 +59,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.quokkalabs.strangeplanet.R
 import com.quokkalabs.strangeplanet.data.model.AsteroidPhase
 import com.quokkalabs.strangeplanet.data.model.RockSize
+import com.quokkalabs.strangeplanet.data.model.Ufo
+import kotlin.math.PI
+import kotlin.math.sin
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
+import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
@@ -79,6 +84,9 @@ fun AsteroidScreen(
 
     DisposableEdgeToEdge(view)
 
+    // Screen off / app backgrounded → suspend play.
+    PauseOnBackground { viewModel.pauseGame() }
+
     // Tone-based SFX (gated by the sound setting).
     val toneGen = remember {
         runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 80) }.getOrNull()
@@ -95,6 +103,46 @@ fun AsteroidScreen(
                 }
                 kotlinx.coroutines.delay(260)
             }
+        }
+    }
+
+    val soundOn by rememberUpdatedState(settings.soundEnabled)
+    fun tone(t: Int, ms: Int) {
+        if (soundOn) runCatching { toneGen?.startTone(t, ms) }
+    }
+
+    // Event SFX: blaster fire, debris impact, hyperspace jump. Baselines reset
+    // whenever play is not active so a fresh life never mis-detects.
+    LaunchedEffect(Unit) {
+        var pBullets = 0
+        var pHyper = 0
+        var pScore = 0
+        snapshotFlow { state }.collect { s ->
+            if (s.phase != AsteroidPhase.PLAYING) {
+                pBullets = s.bullets.size
+                pHyper = s.ship?.hyperspaceCooldown ?: 0
+                pScore = s.score
+                return@collect
+            }
+            val nb = s.bullets.size
+            if (nb > pBullets) tone(ToneGenerator.TONE_PROP_BEEP, 26)
+            pBullets = nb
+
+            val nh = s.ship?.hyperspaceCooldown ?: 0
+            if (nh > pHyper) tone(ToneGenerator.TONE_CDMA_HIGH_SS, 170)
+            pHyper = nh
+
+            if (s.score > pScore) tone(ToneGenerator.TONE_PROP_NACK, 90)
+            pScore = s.score
+        }
+    }
+
+    // Thrust rumble: a low pulse while the conveyance is accelerating.
+    val thrusting = state.ship?.thrustOn == true && state.phase == AsteroidPhase.PLAYING
+    LaunchedEffect(thrusting) {
+        while (thrusting && soundOn) {
+            runCatching { toneGen?.startTone(ToneGenerator.TONE_CDMA_LOW_L, 90) }
+            kotlinx.coroutines.delay(120)
         }
     }
 
@@ -131,6 +179,7 @@ fun AsteroidScreen(
 
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val sMin = minOf(size.width, size.height)
+                val pulseT = (System.nanoTime() / 1_000_000L % 1400L) / 1400f
 
                 // Rocks (socks) — rotate the sprite around its centre.
                 state.rocks.forEach { r ->
@@ -167,42 +216,9 @@ fun AsteroidScreen(
                     drawCircle(ufoBulletColor, sMin * 0.011f, Offset(b.x, b.y))
                 }
 
-                // UFO — procedural saucer. Warm colours + dark outline so it
-                // never blends into the blue/purple backdrop.
-                state.ufo?.let { u ->
-                    val w = ufoR(sMin) * 2.4f
-                    val h = ufoR(sMin) * 1.0f
-                    val bodyColor = Color(0xFFFF6F3C)
-                    val domeColor = Color(0xFFFFE08A)
-                    val outline = Color(0xFF1A0E2E)
-                    // Dark halo for separation from the background.
-                    drawOval(
-                        color = outline.copy(alpha = 0.55f),
-                        topLeft = Offset(u.x - w * 0.58f, u.y - h * 0.62f),
-                        size = Size(w * 1.16f, h * 1.24f),
-                    )
-                    drawOval(
-                        color = bodyColor,
-                        topLeft = Offset(u.x - w / 2f, u.y - h / 2f),
-                        size = Size(w, h),
-                    )
-                    drawOval(
-                        color = outline,
-                        topLeft = Offset(u.x - w / 2f, u.y - h / 2f),
-                        size = Size(w, h),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(
-                            width = sMin * 0.004f,
-                        ),
-                    )
-                    drawArc(
-                        color = domeColor,
-                        startAngle = 180f,
-                        sweepAngle = 180f,
-                        useCenter = true,
-                        topLeft = Offset(u.x - w * 0.28f, u.y - h * 0.9f),
-                        size = Size(w * 0.56f, h * 1.1f),
-                    )
-                }
+                // UFO — detailed warm saucer with dome highlight and pulsing
+                // rim lights; layered so it never blends into the backdrop.
+                state.ufo?.let { u -> drawUfo(u, sMin, pulseT) }
 
                 // Particles — fading dots.
                 state.particles.forEach { p ->
@@ -487,6 +503,96 @@ private fun AsteroidToggleRow(label: String, on: Boolean, onToggle: () -> Unit) 
 }
 
 private fun ufoR(sMin: Float) = sMin * 0.050f
+
+private fun DrawScope.drawUfo(u: Ufo, sMin: Float, t: Float) {
+    val scale = if (u.small) 0.72f else 1f
+    val r = ufoR(sMin) * scale
+    val w = r * 2.6f
+    val h = r * 1.05f
+    val cx = u.x
+    val cy = u.y
+
+    val glow = Color(0xFFFFB066)
+    val hullDark = Color(0xFF8A2D12)
+    val bodyBright = Color(0xFFFF7A3D)
+    val bodySheen = Color(0xFFFFB87A)
+    val dome = Color(0xFFFFE7A6)
+    val outline = Color(0xFF120A22)
+    val lightOn = Color(0xFFB9F6FF)
+    val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = sMin * 0.0035f)
+
+    // Warm glow halo.
+    drawCircle(glow.copy(alpha = 0.16f), w * 0.80f, Offset(cx, cy))
+    drawCircle(glow.copy(alpha = 0.09f), w * 1.08f, Offset(cx, cy))
+    // Dark separation shadow beneath the hull.
+    drawOval(
+        color = outline.copy(alpha = 0.50f),
+        topLeft = Offset(cx - w * 0.56f, cy - h * 0.30f),
+        size = Size(w * 1.12f, h * 1.7f),
+    )
+    // Lower hull.
+    drawOval(
+        color = hullDark,
+        topLeft = Offset(cx - w * 0.5f, cy - h * 0.05f),
+        size = Size(w, h * 1.15f),
+    )
+    // Main disc.
+    drawOval(
+        color = bodyBright,
+        topLeft = Offset(cx - w * 0.5f, cy - h * 0.5f),
+        size = Size(w, h),
+    )
+    // Upper sheen.
+    drawOval(
+        color = bodySheen.copy(alpha = 0.9f),
+        topLeft = Offset(cx - w * 0.34f, cy - h * 0.60f),
+        size = Size(w * 0.68f, h * 0.85f),
+    )
+    // Disc outline.
+    drawOval(
+        color = outline,
+        topLeft = Offset(cx - w * 0.5f, cy - h * 0.5f),
+        size = Size(w, h),
+        style = stroke,
+    )
+    // Cockpit dome + outline + highlight.
+    drawArc(
+        color = dome,
+        startAngle = 180f,
+        sweepAngle = 180f,
+        useCenter = true,
+        topLeft = Offset(cx - w * 0.22f, cy - h * 1.05f),
+        size = Size(w * 0.44f, h * 1.5f),
+    )
+    drawArc(
+        color = outline,
+        startAngle = 180f,
+        sweepAngle = 180f,
+        useCenter = false,
+        topLeft = Offset(cx - w * 0.22f, cy - h * 1.05f),
+        size = Size(w * 0.44f, h * 1.5f),
+        style = stroke,
+    )
+    drawOval(
+        color = Color.White.copy(alpha = 0.65f),
+        topLeft = Offset(cx - w * 0.12f, cy - h * 0.92f),
+        size = Size(w * 0.11f, h * 0.5f),
+    )
+    // Pulsing rim lights.
+    val n = 5
+    for (i in 0 until n) {
+        val fx = (i - (n - 1) / 2f) / ((n - 1) / 2f)
+        val lx = cx + fx * w * 0.40f
+        val ly = cy + h * 0.16f
+        val ph = (sin(t * 2f * PI.toFloat() + i * 1.1f) * 0.5f + 0.5f)
+        drawCircle(outline, r * 0.14f, Offset(lx, ly))
+        drawCircle(
+            lightOn.copy(alpha = 0.30f + 0.60f * ph),
+            r * 0.10f,
+            Offset(lx, ly),
+        )
+    }
+}
 
 @Composable
 private fun DisposableEdgeToEdge(view: android.view.View) {

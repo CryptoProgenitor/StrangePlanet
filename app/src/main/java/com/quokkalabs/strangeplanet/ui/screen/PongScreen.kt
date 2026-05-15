@@ -78,6 +78,7 @@ import com.quokkalabs.strangeplanet.data.model.PongSettings
 import com.quokkalabs.strangeplanet.BuildConfig
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.components.DebugHud
+import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CardPink
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
@@ -117,6 +118,11 @@ fun PongScreen(
                 controller.show(WindowInsetsCompat.Type.systemBars())
             }
         }
+    }
+
+    // Screen off / app backgrounded → suspend an in-progress contest.
+    PauseOnBackground {
+        if (state.phase == GamePhase.PLAYING) viewModel.requestPause()
     }
 
     // Android Back button — mirrors the on-screen back FAB

@@ -88,6 +88,7 @@ import com.quokkalabs.strangeplanet.data.model.SeekerMode
 import com.quokkalabs.strangeplanet.data.model.SeekerType
 import com.quokkalabs.strangeplanet.data.model.designation
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
+import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
@@ -148,6 +149,10 @@ fun PacScreen(
             }
         }
     }
+
+    // Screen off / app backgrounded → suspend solo play (a contest cannot
+    // suspend; pauseGame is a no-op there).
+    PauseOnBackground { viewModel.pauseGame() }
 
     BackHandler {
         viewModel.resetGame()
