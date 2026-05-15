@@ -1,9 +1,12 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
 import android.graphics.BitmapFactory
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,14 +20,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -61,11 +69,33 @@ fun AsteroidScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
+    val settings by viewModel.settings.collectAsState()
     val density = LocalDensity.current
     val view = LocalView.current
     val context = LocalContext.current
 
+    var showSettings by remember { mutableStateOf(false) }
+
     DisposableEdgeToEdge(view)
+
+    // Tone-based SFX (gated by the sound setting).
+    val toneGen = remember {
+        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 80) }.getOrNull()
+    }
+    DisposableEffect(Unit) { onDispose { toneGen?.release() } }
+
+    // "Woo-woo woo" when an uninvited oval vessel arrives.
+    val ufoPresent = state.ufo != null
+    LaunchedEffect(ufoPresent) {
+        if (ufoPresent && settings.soundEnabled) {
+            repeat(3) {
+                runCatching {
+                    toneGen?.startTone(ToneGenerator.TONE_CDMA_LOW_L, 200)
+                }
+                kotlinx.coroutines.delay(260)
+            }
+        }
+    }
 
     BackHandler {
         viewModel.resetGame()
@@ -124,9 +154,16 @@ fun AsteroidScreen(
                 state.bullets.forEach { b ->
                     drawCircle(AlienPink, sMin * 0.007f, Offset(b.x, b.y))
                 }
-                // UFO bullets.
+                // UFO bullets — bright amber with a glow for high contrast
+                // against the cosmic backdrop.
+                val ufoBulletColor = Color(0xFFFFC400)
                 state.ufoBullets.forEach { b ->
-                    drawCircle(CosmicBlue, sMin * 0.008f, Offset(b.x, b.y))
+                    drawCircle(
+                        ufoBulletColor.copy(alpha = 0.35f),
+                        sMin * 0.018f,
+                        Offset(b.x, b.y),
+                    )
+                    drawCircle(ufoBulletColor, sMin * 0.011f, Offset(b.x, b.y))
                 }
 
                 // UFO — procedural saucer.
@@ -164,7 +201,7 @@ fun AsteroidScreen(
                     val flashing = sh.invincibleTicks > 0 &&
                         (sh.invincibleTicks / 5) % 2 == 0
                     if (!flashing) {
-                        val sz = sMin * 0.10f
+                        val sz = sMin * 0.20f
                         if (sh.thrustOn) {
                             drawCircle(
                                 color = AlienPink.copy(alpha = 0.35f),
@@ -211,7 +248,7 @@ fun AsteroidScreen(
             when (state.phase) {
                 AsteroidPhase.READY -> CenterBanner(
                     "SPATIAL DEBRIS AVOIDANCE",
-                    "Tap to deploy the cleaning disc.",
+                    "Tap to deploy Rollsuck Supreme.",
                 )
                 AsteroidPhase.DYING -> CenterBanner(
                     "THIS IS NOT IDEAL",
@@ -243,7 +280,29 @@ fun AsteroidScreen(
                 Text("←", fontSize = 22.sp)
             }
 
-            // Control bar.
+            // Control bar. Default order: ◀ ▲ ✦ ● ▶.
+            // Alternate (settings): ● ▲ ✦ ◀ ▶ (fire, thrust, hyper, L, R).
+            val rotLeft = ControlAction("◀",
+                { viewModel.setInput { it.copy(rotLeft = true) } },
+                { viewModel.setInput { it.copy(rotLeft = false) } })
+            val thrust = ControlAction("▲",
+                { viewModel.setInput { it.copy(thrust = true) } },
+                { viewModel.setInput { it.copy(thrust = false) } })
+            val hyper = ControlAction("✦",
+                { viewModel.setInput { it.copy(hyperspace = true) } },
+                { viewModel.setInput { it.copy(hyperspace = false) } })
+            val fire = ControlAction("●",
+                { viewModel.setInput { it.copy(fire = true) } },
+                { viewModel.setInput { it.copy(fire = false) } })
+            val rotRight = ControlAction("▶",
+                { viewModel.setInput { it.copy(rotRight = true) } },
+                { viewModel.setInput { it.copy(rotRight = false) } })
+
+            val controls = if (settings.altLayout)
+                listOf(fire, thrust, hyper, rotLeft, rotRight)
+            else
+                listOf(rotLeft, thrust, hyper, fire, rotRight)
+
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -251,23 +310,127 @@ fun AsteroidScreen(
                     .padding(horizontal = 10.dp, vertical = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                HoldButton("◀", Modifier.weight(1f),
-                    { viewModel.setInput { it.copy(rotLeft = true) } },
-                    { viewModel.setInput { it.copy(rotLeft = false) } })
-                HoldButton("▲", Modifier.weight(1f),
-                    { viewModel.setInput { it.copy(thrust = true) } },
-                    { viewModel.setInput { it.copy(thrust = false) } })
-                HoldButton("✦", Modifier.weight(1f),
-                    { viewModel.setInput { it.copy(hyperspace = true) } },
-                    { viewModel.setInput { it.copy(hyperspace = false) } })
-                HoldButton("●", Modifier.weight(1f),
-                    { viewModel.setInput { it.copy(fire = true) } },
-                    { viewModel.setInput { it.copy(fire = false) } })
-                HoldButton("▶", Modifier.weight(1f),
-                    { viewModel.setInput { it.copy(rotRight = true) } },
-                    { viewModel.setInput { it.copy(rotRight = false) } })
+                controls.forEach { c ->
+                    HoldButton(c.label, Modifier.weight(1f), c.onPress, c.onRelease)
+                }
+            }
+
+            // Settings button.
+            FloatingActionButton(
+                onClick = { showSettings = true },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 20.dp, end = 14.dp)
+                    .size(44.dp),
+                shape = CircleShape,
+                containerColor = DeepNavy.copy(alpha = 0.75f),
+                contentColor = AlienPink,
+            ) {
+                Text("⚙", fontSize = 20.sp)
+            }
+
+            if (showSettings) {
+                AsteroidSettingsPanel(
+                    soundEnabled = settings.soundEnabled,
+                    altLayout = settings.altLayout,
+                    onSound = viewModel::setSoundEnabled,
+                    onAltLayout = viewModel::setAltLayout,
+                    onClose = { showSettings = false },
+                )
             }
         }
+    }
+}
+
+private data class ControlAction(
+    val label: String,
+    val onPress: () -> Unit,
+    val onRelease: () -> Unit,
+)
+
+@Composable
+private fun BoxScope.AsteroidSettingsPanel(
+    soundEnabled: Boolean,
+    altLayout: Boolean,
+    onSound: (Boolean) -> Unit,
+    onAltLayout: (Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(onClick = onClose),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.86f)
+                .background(DeepNavy.copy(alpha = 0.96f), RoundedCornerShape(20.dp))
+                .clickable(enabled = false) {}
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "ACTIVITY PARAMETERS",
+                color = AlienPink,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(16.dp))
+            AsteroidToggleRow("AUDIBLE FEEDBACK", soundEnabled) {
+                onSound(!soundEnabled)
+            }
+            AsteroidToggleRow("ALTERNATE CONTROL LAYOUT", altLayout) {
+                onAltLayout(!altLayout)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Alternate: fire · thrust · hyperspace · left · right",
+                color = Color.White.copy(alpha = 0.4f),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "RESUME ACTIVITY",
+                color = AlienPink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clickable(onClick = onClose)
+                    .padding(8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AsteroidToggleRow(label: String, on: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 14.sp,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            if (on) "ENABLED" else "DISABLED",
+            color = if (on) AlienPink else Color.White.copy(alpha = 0.35f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
 

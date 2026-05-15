@@ -27,7 +27,10 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
     val state: StateFlow<AsteroidGameState> = _state.asStateFlow()
 
     private val _settings = MutableStateFlow(
-        AsteroidSettings(soundEnabled = prefs.getBoolean(KEY_SOUND, true)),
+        AsteroidSettings(
+            soundEnabled = prefs.getBoolean(KEY_SOUND, true),
+            altLayout = prefs.getBoolean(KEY_ALT_LAYOUT, false),
+        ),
     )
     val settings: StateFlow<AsteroidSettings> = _settings.asStateFlow()
 
@@ -109,8 +112,14 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putBoolean(KEY_SOUND, enabled).apply()
     }
 
+    fun setAltLayout(enabled: Boolean) {
+        _settings.value = _settings.value.copy(altLayout = enabled)
+        prefs.edit().putBoolean(KEY_ALT_LAYOUT, enabled).apply()
+    }
+
     private companion object {
         const val KEY_HIGH_SCORE = "high_score"
         const val KEY_SOUND = "sound_enabled"
+        const val KEY_ALT_LAYOUT = "alt_layout"
     }
 }

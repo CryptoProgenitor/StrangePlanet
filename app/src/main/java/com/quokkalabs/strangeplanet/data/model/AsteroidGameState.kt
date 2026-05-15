@@ -67,6 +67,8 @@ data class Particle(
 
 data class AsteroidSettings(
     val soundEnabled: Boolean = true,
+    // Alternate control bar order: fire, thrust, hyperspace, left, right.
+    val altLayout: Boolean = false,
 )
 
 data class AsteroidGameState(
