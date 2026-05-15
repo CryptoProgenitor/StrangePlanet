@@ -378,59 +378,63 @@ class MazeEngine(
         var queued = b.queuedDir
         var progress = b.progress
 
-        // Standing still: try to launch straight into the queued direction.
-        if (dir == PacDir.NONE) {
-            if (queued != PacDir.NONE && !isWall(col + queued.dc, row + queued.dr)) {
-                dir = queued
-                queued = PacDir.NONE
-            } else {
-                return state.copy(
-                    being = b.copy(progress = 0f, queuedDir = queued),
-                )
-            }
-        }
-
-        // Mid-tile reversal is always legal (no wall check needed).
-        if (queued != PacDir.NONE && queued == dir.opposite()) {
-            dir = queued
-            queued = PacDir.NONE
-            progress = 1f - progress
-        }
-
-        val speed = BASE_SPEED * (1f + (state.level - 1) * 0.06f)
-        progress += speed
-
         var pellets = state.pellets
         var socks = state.socks
         var score = state.score
         var sockEaten = false
 
-        // Resolve every whole tile crossed this tick (speed < 1, so ≤ 1).
-        while (progress >= 1f) {
-            col = wrapCol(col + dir.dc, row)
-            row += dir.dr
-            progress -= 1f
+        // Standing still: try to launch straight into the queued direction.
+        if (dir == PacDir.NONE &&
+            queued != PacDir.NONE &&
+            !isWall(col + queued.dc, row + queued.dr)
+        ) {
+            dir = queued
+            queued = PacDir.NONE
+        }
 
-            val k = key(col, row)
-            if (pellets.contains(k)) {
-                pellets = pellets - k
-                score += 10
-            }
-            if (socks.contains(k)) {
-                socks = socks - k
-                score += 50
-                sockEaten = true
-            }
-
-            // At the centre: prefer the queued turn, else continue, else stop.
-            if (queued != PacDir.NONE && !isWall(col + queued.dc, row + queued.dr)) {
+        // The being moves only when it has a direction — but the rest of the
+        // world (wave timer, seekers, collisions) advances every tick
+        // regardless, so seekers never freeze while the player is stopped.
+        if (dir != PacDir.NONE) {
+            // Mid-tile reversal is always legal (no wall check needed).
+            if (queued != PacDir.NONE && queued == dir.opposite()) {
                 dir = queued
                 queued = PacDir.NONE
-            } else if (isWall(col + dir.dc, row + dir.dr)) {
-                dir = PacDir.NONE
-                progress = 0f
-                break
+                progress = 1f - progress
             }
+
+            val speed = BASE_SPEED * (1f + (state.level - 1) * 0.06f)
+            progress += speed
+
+            // Resolve every whole tile crossed this tick (speed < 1, so ≤ 1).
+            while (progress >= 1f) {
+                col = wrapCol(col + dir.dc, row)
+                row += dir.dr
+                progress -= 1f
+
+                val k = key(col, row)
+                if (pellets.contains(k)) {
+                    pellets = pellets - k
+                    score += 10
+                }
+                if (socks.contains(k)) {
+                    socks = socks - k
+                    score += 50
+                    sockEaten = true
+                }
+
+                // At the centre: prefer the queued turn, else continue, else stop.
+                if (queued != PacDir.NONE && !isWall(col + queued.dc, row + queued.dr)) {
+                    dir = queued
+                    queued = PacDir.NONE
+                } else if (isWall(col + dir.dc, row + dir.dr)) {
+                    dir = PacDir.NONE
+                    progress = 0f
+                    break
+                }
+            }
+        } else {
+            progress = 0f
         }
 
         // Wave timer + frightened countdown (a fresh sock resets the window).
