@@ -76,9 +76,12 @@ data class PacGameState(
     // Remaining star tiles, keyed row * cols + col
     val pellets: Set<Int> = emptySet(),
     val totalPellets: Int = 0,
+    // Remaining sock (power pellet) tiles, keyed row * cols + col
+    val socks: Set<Int> = emptySet(),
     // Wall tiles, keyed row * cols + col (static for the level)
     val walls: Set<Int> = emptySet(),
     val score: Int = 0,
+    val highScore: Int = 0,
     val lives: Int = 3,
     val level: Int = 1,
     val phase: PacPhase = PacPhase.READY,
@@ -90,4 +93,6 @@ data class PacGameState(
     val waveTick: Int = 0,
     // Remaining frightened ticks (0 = not frightened)
     val frightenedTick: Int = 0,
+    // Consecutive perished beings consumed in the current frightened window
+    val frightenedCombo: Int = 0,
 )

@@ -19,12 +19,24 @@ import kotlinx.coroutines.launch
 
 class PacViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val prefs = application.getSharedPreferences("pac_prefs", Application.MODE_PRIVATE)
+
     private var engine: MazeEngine? = null
 
-    private val _state = MutableStateFlow(PacGameState())
+    private var highScore: Int = prefs.getInt(KEY_HIGH_SCORE, 0)
+
+    private val _state = MutableStateFlow(PacGameState(highScore = highScore))
     val state: StateFlow<PacGameState> = _state.asStateFlow()
 
-    private val _pacSettings = MutableStateFlow(PacSettings())
+    private val _pacSettings = MutableStateFlow(
+        PacSettings(
+            soundEnabled = prefs.getBoolean(KEY_SOUND, true),
+            showSayings = prefs.getBoolean(KEY_SAYINGS, true),
+            avatar = runCatching {
+                PacAvatar.valueOf(prefs.getString(KEY_AVATAR, PacAvatar.BEING.name)!!)
+            }.getOrDefault(PacAvatar.BEING),
+        ),
+    )
     val pacSettings: StateFlow<PacSettings> = _pacSettings.asStateFlow()
 
     // Latest swipe-derived intent, consumed once by the next tick.
@@ -33,13 +45,20 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
     private var screenW = 0f
     private var screenH = 0f
 
+    private fun commitHighScore(score: Int) {
+        if (score > highScore) {
+            highScore = score
+            prefs.edit().putInt(KEY_HIGH_SCORE, highScore).apply()
+        }
+    }
+
     fun initGame(screenWidth: Float, screenHeight: Float) {
         if (engine != null) return
         screenW = screenWidth
         screenH = screenHeight
         val eng = MazeEngine(screenWidth, screenHeight)
         engine = eng
-        _state.value = eng.createInitialState()
+        _state.value = eng.createInitialState(highScore = highScore)
 
         viewModelScope.launch {
             while (isActive) {
@@ -57,18 +76,23 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
                             level = s.level + 1,
                             score = s.score,
                             lives = s.lives,
+                            highScore = highScore,
                         ).copy(phase = PacPhase.PLAYING)
                     }
                     PacPhase.DYING -> {
                         delay(2000)
                         val s = _state.value
                         if (s.lives <= 0) {
-                            _state.update { it.copy(phase = PacPhase.GAME_OVER) }
+                            commitHighScore(s.score)
+                            _state.update {
+                                it.copy(phase = PacPhase.GAME_OVER, highScore = highScore)
+                            }
                         } else {
                             _state.value = e.createInitialState(
                                 level = s.level,
                                 score = s.score,
                                 lives = s.lives,
+                                highScore = highScore,
                             ).copy(phase = PacPhase.PLAYING)
                         }
                     }
@@ -91,7 +115,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         when (_state.value.phase) {
             PacPhase.READY -> _state.value = e.startGame(_state.value)
             PacPhase.GAME_OVER -> {
-                _state.value = e.createInitialState()
+                _state.value = e.createInitialState(highScore = highScore)
                 _state.value = e.startGame(_state.value)
             }
             else -> {}
@@ -100,7 +124,8 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetGame() {
         val e = engine ?: return
-        _state.value = e.createInitialState()
+        commitHighScore(_state.value.score)
+        _state.value = e.createInitialState(highScore = highScore)
         pendingDir = null
     }
 
@@ -116,13 +141,23 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSoundEnabled(enabled: Boolean) {
         _pacSettings.update { it.copy(soundEnabled = enabled) }
+        prefs.edit().putBoolean(KEY_SOUND, enabled).apply()
     }
 
     fun setShowSayings(show: Boolean) {
         _pacSettings.update { it.copy(showSayings = show) }
+        prefs.edit().putBoolean(KEY_SAYINGS, show).apply()
     }
 
     fun setAvatar(avatar: PacAvatar) {
         _pacSettings.update { it.copy(avatar = avatar) }
+        prefs.edit().putString(KEY_AVATAR, avatar.name).apply()
+    }
+
+    private companion object {
+        const val KEY_HIGH_SCORE = "high_score"
+        const val KEY_SOUND = "sound_enabled"
+        const val KEY_SAYINGS = "show_sayings"
+        const val KEY_AVATAR = "avatar"
     }
 }

@@ -1,9 +1,18 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
 import android.graphics.BitmapFactory
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,7 +36,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -109,6 +121,41 @@ fun PacScreen(
     }
 
     val swipeThreshold = with(density) { 24.dp.toPx() }
+
+    var showSettings by remember { mutableStateOf(false) }
+
+    val pulse by rememberInfiniteTransition(label = "sockPulse").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "sockPulseValue",
+    )
+
+    // Tone-based SFX (gated by the sound setting).
+    val toneGen = remember {
+        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 70) }.getOrNull()
+    }
+    DisposableEffect(Unit) { onDispose { toneGen?.release() } }
+    fun beep(tone: Int, ms: Int) {
+        if (settings.soundEnabled) runCatching { toneGen?.startTone(tone, ms) }
+    }
+    LaunchedEffect(state.score) {
+        if (state.score > 0) beep(ToneGenerator.TONE_PROP_BEEP, 40)
+    }
+    LaunchedEffect(state.frightenedTick > 0) {
+        if (state.frightenedTick > 0) beep(ToneGenerator.TONE_PROP_BEEP2, 120)
+    }
+    LaunchedEffect(state.lives) {
+        if (state.phase == PacPhase.DYING) beep(ToneGenerator.TONE_CDMA_ABBR_ALERT, 300)
+    }
+    LaunchedEffect(state.phase) {
+        if (state.phase == PacPhase.LEVEL_CLEARED) {
+            beep(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 250)
+        }
+    }
 
     CosmicBackground(showStars = false) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -194,6 +241,41 @@ fun PacScreen(
                         )
                     }
 
+                    // Socks (power pellets) — fabric tube + pulsing halo
+                    state.socks.forEach { k ->
+                        val c = k % state.cols
+                        val r = k / state.cols
+                        val cx = state.originX + (c + 0.5f) * ts
+                        val cy = state.originY + (r + 0.5f) * ts
+                        drawCircle(
+                            color = AlienPink.copy(alpha = 0.18f + 0.30f * pulse),
+                            radius = ts * (0.45f + 0.30f * pulse),
+                            center = Offset(cx, cy),
+                        )
+                        val tubeColor = Color(0xFFEAD9FF)
+                        // Leg of the sock.
+                        drawRoundRect(
+                            color = tubeColor,
+                            topLeft = Offset(cx - ts * 0.13f, cy - ts * 0.30f),
+                            size = Size(ts * 0.26f, ts * 0.42f),
+                            cornerRadius = CornerRadius(ts * 0.10f, ts * 0.10f),
+                        )
+                        // Foot of the sock.
+                        drawRoundRect(
+                            color = tubeColor,
+                            topLeft = Offset(cx - ts * 0.13f, cy + ts * 0.04f),
+                            size = Size(ts * 0.40f, ts * 0.22f),
+                            cornerRadius = CornerRadius(ts * 0.11f, ts * 0.11f),
+                        )
+                        // Cuff stripe.
+                        drawRoundRect(
+                            color = AlienPink,
+                            topLeft = Offset(cx - ts * 0.13f, cy - ts * 0.30f),
+                            size = Size(ts * 0.26f, ts * 0.09f),
+                            cornerRadius = CornerRadius(ts * 0.05f, ts * 0.05f),
+                        )
+                    }
+
                     // Seekers (procedural dome + wavy-feet silhouette)
                     state.seekers.forEach { s ->
                         drawSeeker(
@@ -228,20 +310,44 @@ fun PacScreen(
                 }
 
                 // HUD — full deadpan terminology
-                Row(
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 20.dp)
-                        .background(
-                            DeepNavy.copy(alpha = 0.75f),
-                            RoundedCornerShape(14.dp),
-                        )
-                        .padding(horizontal = 22.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
+                        .padding(top = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    HudStat("SUSTENANCE", state.score.toString())
-                    HudStat("DESIGNATION", "TIER ${state.level}")
-                    HudStat("ATTEMPTS", state.lives.toString())
+                    Row(
+                        modifier = Modifier
+                            .background(
+                                DeepNavy.copy(alpha = 0.75f),
+                                RoundedCornerShape(14.dp),
+                            )
+                            .padding(horizontal = 22.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    ) {
+                        HudStat("SUSTENANCE", state.score.toString())
+                        HudStat("RECORD", state.highScore.toString())
+                        HudStat("DESIGNATION", "TIER ${state.level}")
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        repeat(state.lives.coerceAtLeast(0)) {
+                            Image(
+                                bitmap = avatarBitmap,
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                    }
+                    if (state.frightenedTick > 0 && settings.showSayings) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "THE PERISHED BEINGS ARE VULNERABLE",
+                            color = AlienPink,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
 
                 when (state.phase) {
@@ -259,7 +365,8 @@ fun PacScreen(
                     )
                     PacPhase.GAME_OVER -> CenterBanner(
                         title = "PURSUIT CONCLUDED",
-                        subtitle = "Tap to attempt the activity again.",
+                        subtitle = "Sustenance ${state.score} · Record " +
+                            "${state.highScore}\nTap to attempt the activity again.",
                     )
                     PacPhase.PAUSED -> CenterBanner(
                         title = "ACTIVITY SUSPENDED",
@@ -282,7 +389,125 @@ fun PacScreen(
             ) {
                 Text("←", fontSize = 22.sp)
             }
+
+            // Settings button
+            FloatingActionButton(
+                onClick = {
+                    showSettings = true
+                    viewModel.pauseGame()
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 20.dp, end = 14.dp)
+                    .size(44.dp),
+                shape = CircleShape,
+                containerColor = DeepNavy.copy(alpha = 0.75f),
+                contentColor = AlienPink,
+            ) {
+                Text("⚙", fontSize = 20.sp)
+            }
+
+            if (showSettings) {
+                PacSettingsPanel(
+                    settings = settings,
+                    onAvatar = viewModel::setAvatar,
+                    onSound = viewModel::setSoundEnabled,
+                    onSayings = viewModel::setShowSayings,
+                    onClose = {
+                        showSettings = false
+                        viewModel.resumeGame()
+                    },
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun BoxScope.PacSettingsPanel(
+    settings: com.quokkalabs.strangeplanet.data.model.PacSettings,
+    onAvatar: (PacAvatar) -> Unit,
+    onSound: (Boolean) -> Unit,
+    onSayings: (Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(onClick = onClose),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.86f)
+                .background(DeepNavy.copy(alpha = 0.96f), RoundedCornerShape(20.dp))
+                .clickable(enabled = false) {}
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "ACTIVITY PARAMETERS",
+                color = AlienPink,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "DESIGNATED FORM",
+                color = Color.White.copy(alpha = 0.45f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.height(8.dp))
+            PacAvatar.values().forEach { av ->
+                val selected = settings.avatar == av
+                Text(
+                    av.label,
+                    color = if (selected) AlienPink else Color.White.copy(alpha = 0.7f),
+                    fontSize = 15.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onAvatar(av) }
+                        .padding(vertical = 8.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            ToggleRow("AUDIBLE FEEDBACK", settings.soundEnabled) { onSound(!settings.soundEnabled) }
+            ToggleRow("DEADPAN COMMENTARY", settings.showSayings) { onSayings(!settings.showSayings) }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "RESUME ACTIVITY",
+                color = AlienPink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clickable(onClick = onClose)
+                    .padding(8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+        Text(
+            if (on) "ENABLED" else "DISABLED",
+            color = if (on) AlienPink else Color.White.copy(alpha = 0.35f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

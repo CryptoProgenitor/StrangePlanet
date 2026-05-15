@@ -15,7 +15,8 @@ import kotlin.math.abs
  * Grid legend (authored maze):
  *   '#' wall
  *   '.' star (pellet)
- *   ' ' empty path (no star)
+ *   'o' sock (power pellet)
+ *   ' ' exterior — treated as wall (only 'T' rows are open at the edge)
  *   'P' being spawn (treated as empty path)
  *   'T' tunnel mouth (empty path; row is flagged as a wrap row)
  *
@@ -32,9 +33,10 @@ class MazeEngine(
         private const val BASE_SPEED = 0.085f
 
         // Hand-authored, vertically/horizontally near-symmetric mobile maze.
+        // Socks ('o') sit near the four corners.
         private val AUTHORED = listOf(
             "###################",
-            "#........#........#",
+            "#o.......#.......o#",
             "#.##.###.#.###.##.#",
             "#.................#",
             "#.##.#.#####.#.##.#",
@@ -52,7 +54,7 @@ class MazeEngine(
             "##.#.#.#####.#.#.##",
             "#....#...#...#....#",
             "#.######.#.######.#",
-            "#.................#",
+            "#o...............o#",
             "###################",
         )
     }
@@ -80,12 +82,28 @@ class MazeEngine(
     private val originX: Float = (screenWidth - tileSize * cols) / 2f
     private val originY: Float = (screenHeight - tileSize * rows) / 2f
 
+    // Reachable pen target that EATEN seekers return to (the being spawn).
+    private val penCol: Int
+    private val penRow: Int
+
+    init {
+        var pc = cols / 2
+        var pr = rows / 2
+        for (r in 0 until rows) for (c in 0 until cols) {
+            if (grid[r][c] == 'P') { pc = c; pr = r }
+        }
+        penCol = pc
+        penRow = pr
+    }
+
     private fun isWall(col: Int, row: Int): Boolean {
         if (row < 0 || row >= rows) return true
         if (col < 0 || col >= cols) {
+            // Off the side is only legal on a tunnel row (wrap handles it).
             return row !in tunnelRows
         }
-        return grid[row][col] == '#'
+        val ch = grid[row][col]
+        return ch == '#' || ch == ' '
     }
 
     private fun wrapCol(col: Int, row: Int): Int = when {
@@ -106,6 +124,10 @@ class MazeEngine(
         waveTick < 3555 -> SeekerMode.SCATTER   // ~5 s
         else -> SeekerMode.CHASE                // forever
     }
+
+    // Frightened window shrinks as the tier climbs (≈6.7 s → floor ≈1.9 s).
+    private fun frightenedDuration(level: Int): Int =
+        (420 - (level - 1) * 40).coerceAtLeast(120)
 
     // ── Seeker targeting ─────────────────────────────────────────────────────
 
@@ -157,7 +179,7 @@ class MazeEngine(
         SeekerMode.SCATTER -> scatterTarget(s.type)
         SeekerMode.CHASE -> chaseTarget(s, being, allSeekers)
         SeekerMode.FRIGHTENED -> Pair(s.col, s.row) // direction chosen randomly
-        SeekerMode.EATEN -> Pair(cols / 2, rows / 2)
+        SeekerMode.EATEN -> Pair(penCol, penRow)
     }
 
     // Greedy direction: choose legal non-reversing move closest to target.
@@ -194,8 +216,8 @@ class MazeEngine(
         newFrightenedTick: Int,
         level: Int,
     ): SeekerEntity {
-        // Resolve effective mode
-        val effectiveMode = when {
+        // Resolve effective mode.
+        var effectiveMode = when {
             s.mode == SeekerMode.EATEN -> SeekerMode.EATEN
             s.mode == SeekerMode.FRIGHTENED && newFrightenedTick > 0 -> SeekerMode.FRIGHTENED
             else -> globalMode(newWaveTick)
@@ -214,11 +236,13 @@ class MazeEngine(
 
         // Standing still: pick initial direction immediately.
         if (dir == PacDir.NONE) {
-            val (tc, tr) = seekerTarget(s.copy(mode = effectiveMode), being, allSeekers)
+            val seed0 = newWaveTick + col * 7 + row * 13
+            val probe = s.copy(col = col, row = row, dir = PacDir.NONE, mode = effectiveMode)
+            val (tc, tr) = seekerTarget(probe, being, allSeekers)
             dir = if (effectiveMode == SeekerMode.FRIGHTENED)
-                seekerFrightenedDir(s, newWaveTick + col * 7 + row * 13)
+                seekerFrightenedDir(probe, seed0)
             else
-                seekerChooseDir(s.copy(col = col, row = row, dir = PacDir.NONE), tc, tr)
+                seekerChooseDir(probe, tc, tr)
             if (dir == PacDir.NONE) return s.copy(mode = effectiveMode)
         }
 
@@ -229,7 +253,11 @@ class MazeEngine(
             row += dir.dr
             progress -= 1f
 
-            // At tile centre: choose next direction.
+            // An EATEN seeker that reaches the pen revives to the global mode.
+            if (effectiveMode == SeekerMode.EATEN && col == penCol && row == penRow) {
+                effectiveMode = globalMode(newWaveTick)
+            }
+
             val midS = s.copy(col = col, row = row, dir = dir, mode = effectiveMode)
             val (tc, tr) = seekerTarget(midS, being, allSeekers)
             val nextDir = if (effectiveMode == SeekerMode.FRIGHTENED)
@@ -248,17 +276,20 @@ class MazeEngine(
         level: Int = 1,
         score: Int = 0,
         lives: Int = 3,
+        highScore: Int = 0,
     ): PacGameState {
         var spawnCol = cols / 2
         var spawnRow = rows / 2
         val pellets = mutableSetOf<Int>()
+        val socks = mutableSetOf<Int>()
         val walls = mutableSetOf<Int>()
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 when (grid[r][c]) {
                     '.' -> pellets.add(key(c, r))
+                    'o' -> socks.add(key(c, r))
                     'P' -> { spawnCol = c; spawnRow = r }
-                    '#' -> walls.add(key(c, r))
+                    '#', ' ' -> walls.add(key(c, r))
                 }
             }
         }
@@ -279,8 +310,10 @@ class MazeEngine(
             originY = originY,
             pellets = pellets,
             totalPellets = pellets.size,
+            socks = socks,
             walls = walls,
             score = score,
+            highScore = highScore,
             lives = lives,
             level = level,
             phase = PacPhase.READY,
@@ -289,6 +322,7 @@ class MazeEngine(
             seekers = seekers,
             waveTick = 0,
             frightenedTick = 0,
+            frightenedCombo = 0,
         )
     }
 
@@ -303,8 +337,8 @@ class MazeEngine(
 
     /**
      * One simulation tick. [requestedDir], if non-null, becomes the being's
-     * queued turn (the input queue). Movement, turning and pellet eating all
-     * happen here; rendering reads the resulting state.
+     * queued turn (the input queue). Movement, turning, eating and seeker
+     * resolution all happen here; rendering reads the resulting state.
      */
     fun update(state: PacGameState, requestedDir: PacDir?): PacGameState {
         val queued = requestedDir ?: PacDir.NONE
@@ -349,7 +383,9 @@ class MazeEngine(
         progress += speed
 
         var pellets = state.pellets
+        var socks = state.socks
         var score = state.score
+        var sockEaten = false
 
         // Resolve every whole tile crossed this tick (speed < 1, so ≤ 1).
         while (progress >= 1f) {
@@ -357,11 +393,15 @@ class MazeEngine(
             row += dir.dr
             progress -= 1f
 
-            // Eat a star on arrival at the tile centre.
             val k = key(col, row)
             if (pellets.contains(k)) {
                 pellets = pellets - k
                 score += 10
+            }
+            if (socks.contains(k)) {
+                socks = socks - k
+                score += 50
+                sockEaten = true
             }
 
             // At the centre: prefer the queued turn, else continue, else stop.
@@ -375,34 +415,65 @@ class MazeEngine(
             }
         }
 
-        // Update wave timer and frightened countdown.
+        // Wave timer + frightened countdown (a fresh sock resets the window).
         val newWaveTick = state.waveTick + 1
-        val newFrightenedTick = (state.frightenedTick - 1).coerceAtLeast(0)
+        val newFrightenedTick = if (sockEaten)
+            frightenedDuration(state.level)
+        else
+            (state.frightenedTick - 1).coerceAtLeast(0)
+        var combo = if (sockEaten) 0 else state.frightenedCombo
 
-        // Update all seekers (use original being position as target reference).
-        val updatedSeekers = state.seekers.map { s ->
+        // On a fresh sock, flip every active seeker to FRIGHTENED + reverse.
+        val seedSeekers = if (sockEaten) state.seekers.map { s ->
+            if (s.mode == SeekerMode.SCATTER || s.mode == SeekerMode.CHASE)
+                s.copy(mode = SeekerMode.FRIGHTENED, dir = s.dir.opposite())
+            else s
+        } else state.seekers
+
+        var movedSeekers = seedSeekers.map { s ->
             updateSeeker(
                 s = s,
                 being = state.being,
-                allSeekers = state.seekers,
+                allSeekers = seedSeekers,
                 newWaveTick = newWaveTick,
                 newFrightenedTick = newFrightenedTick,
                 level = state.level,
             )
         }
 
-        // Collision: being's new tile vs each seeker's tile (SCATTER or CHASE only).
-        val caught = updatedSeekers.any { s ->
-            s.col == col && s.row == row &&
-                (s.mode == SeekerMode.SCATTER || s.mode == SeekerMode.CHASE)
+        // Collision resolution against the being's new tile.
+        var caught = false
+        movedSeekers = movedSeekers.map { s ->
+            if (s.col == col && s.row == row) {
+                when (s.mode) {
+                    SeekerMode.FRIGHTENED -> {
+                        score += 200 * (1 shl combo.coerceAtMost(3))
+                        combo = (combo + 1).coerceAtMost(3)
+                        s.copy(mode = SeekerMode.EATEN)
+                    }
+                    SeekerMode.SCATTER, SeekerMode.CHASE -> {
+                        caught = true
+                        s
+                    }
+                    SeekerMode.EATEN -> s
+                }
+            } else s
         }
 
         val newLives = if (caught) state.lives - 1 else state.lives
+        val cleared = pellets.isEmpty() && socks.isEmpty()
 
         val phase = when {
             caught -> PacPhase.DYING
-            pellets.isEmpty() -> PacPhase.LEVEL_CLEARED
+            cleared -> PacPhase.LEVEL_CLEARED
             else -> PacPhase.PLAYING
+        }
+
+        val saying = when {
+            phase == PacPhase.LEVEL_CLEARED -> "ALL STARS CONSUMED. VIBRATION EMOTION."
+            sockEaten -> "THE PERISHED BEINGS ARE VULNERABLE."
+            newFrightenedTick == 0 && state.frightenedTick > 0 -> null
+            else -> state.activeSaying
         }
 
         return state.copy(
@@ -414,14 +485,15 @@ class MazeEngine(
                 progress = progress,
             ),
             pellets = pellets,
+            socks = socks,
             score = score,
             lives = newLives,
             phase = phase,
-            seekers = updatedSeekers,
+            seekers = movedSeekers,
             waveTick = newWaveTick,
             frightenedTick = newFrightenedTick,
-            activeSaying = if (phase == PacPhase.LEVEL_CLEARED)
-                "ALL STARS CONSUMED. VIBRATION EMOTION." else state.activeSaying,
+            frightenedCombo = combo,
+            activeSaying = saying,
         )
     }
 }
