@@ -49,14 +49,30 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
                 pendingDir = null
                 _state.update { e.update(it, dir) }
 
-                if (_state.value.phase == PacPhase.LEVEL_CLEARED) {
-                    delay(1800)
-                    val s = _state.value
-                    _state.value = e.createInitialState(
-                        level = s.level + 1,
-                        score = s.score,
-                        lives = s.lives,
-                    ).copy(phase = PacPhase.PLAYING)
+                when (_state.value.phase) {
+                    PacPhase.LEVEL_CLEARED -> {
+                        delay(1800)
+                        val s = _state.value
+                        _state.value = e.createInitialState(
+                            level = s.level + 1,
+                            score = s.score,
+                            lives = s.lives,
+                        ).copy(phase = PacPhase.PLAYING)
+                    }
+                    PacPhase.DYING -> {
+                        delay(2000)
+                        val s = _state.value
+                        if (s.lives <= 0) {
+                            _state.update { it.copy(phase = PacPhase.GAME_OVER) }
+                        } else {
+                            _state.value = e.createInitialState(
+                                level = s.level,
+                                score = s.score,
+                                lives = s.lives,
+                            ).copy(phase = PacPhase.PLAYING)
+                        }
+                    }
+                    else -> {}
                 }
             }
         }

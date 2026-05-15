@@ -28,6 +28,24 @@ enum class PacAvatar(val label: String) {
     UNICORN("The Mythic Equine"),
 }
 
+enum class SeekerType {
+    MINUTE_REMINDER,    // Blinky: direct chaser
+    SOCIAL_ANXIETY,     // Pinky: 4-tiles-ahead ambush
+    LOGICAL_DEBATER,    // Inky: vector flanker
+    OPTIONAL_OBLIGATION, // Clyde: shy wanderer
+}
+
+enum class SeekerMode { SCATTER, CHASE, FRIGHTENED, EATEN }
+
+data class SeekerEntity(
+    val type: SeekerType,
+    val col: Int,
+    val row: Int,
+    val progress: Float = 0f,
+    val dir: PacDir = PacDir.LEFT,
+    val mode: SeekerMode = SeekerMode.SCATTER,
+)
+
 data class PacSettings(
     val soundEnabled: Boolean = true,
     val showSayings: Boolean = true,
@@ -67,4 +85,9 @@ data class PacGameState(
     val screenWidth: Float = 0f,
     val screenHeight: Float = 0f,
     val activeSaying: String? = null,
+    val seekers: List<SeekerEntity> = emptyList(),
+    // Ticks elapsed in current scatter/chase wave cycle
+    val waveTick: Int = 0,
+    // Remaining frightened ticks (0 = not frightened)
+    val frightenedTick: Int = 0,
 )

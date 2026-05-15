@@ -48,9 +48,13 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.quokkalabs.strangeplanet.R
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.quokkalabs.strangeplanet.data.model.PacAvatar
 import com.quokkalabs.strangeplanet.data.model.PacDir
 import com.quokkalabs.strangeplanet.data.model.PacPhase
+import com.quokkalabs.strangeplanet.data.model.SeekerEntity
+import com.quokkalabs.strangeplanet.data.model.SeekerMode
+import com.quokkalabs.strangeplanet.data.model.SeekerType
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
@@ -181,6 +185,17 @@ fun PacScreen(
                         )
                     }
 
+                    // Seekers (procedural dome + wavy-feet silhouette)
+                    state.seekers.forEach { s ->
+                        drawSeeker(
+                            s = s,
+                            originX = state.originX,
+                            originY = state.originY,
+                            ts = ts,
+                            frightenedTick = state.frightenedTick,
+                        )
+                    }
+
                     // Being (smoothly interpolated between tiles)
                     val b = state.being
                     val bx = state.originX +
@@ -215,6 +230,10 @@ fun PacScreen(
                         title = "PREPARE FOR PURSUIT",
                         subtitle = "Gesture in any direction to commence locomotion.",
                     )
+                    PacPhase.DYING -> CenterBanner(
+                        title = "THIS IS NOT IDEAL",
+                        subtitle = "A perished being made contact. Reconstituting.",
+                    )
                     PacPhase.LEVEL_CLEARED -> CenterBanner(
                         title = "VIBRATION EMOTION",
                         subtitle = state.activeSaying ?: "ALL STARS CONSUMED.",
@@ -244,6 +263,89 @@ fun PacScreen(
             ) {
                 Text("←", fontSize = 22.sp)
             }
+        }
+    }
+}
+
+private fun DrawScope.drawSeeker(
+    s: SeekerEntity,
+    originX: Float,
+    originY: Float,
+    ts: Float,
+    frightenedTick: Int,
+) {
+    val cx = originX + (s.col + s.dir.dc * s.progress + 0.5f) * ts
+    val cy = originY + (s.row + s.dir.dr * s.progress + 0.5f) * ts
+
+    val pupilColor = Color(0xFF1A0050)
+    val frightened = s.mode == SeekerMode.FRIGHTENED && frightenedTick > 0
+    val eaten = s.mode == SeekerMode.EATEN
+
+    val bodyColor = when {
+        frightened -> {
+            // Flash white in the final ~2 s (≈125 ticks).
+            if (frightenedTick < 125 && (frightenedTick / 14) % 2 == 0) Color.White
+            else Color(0xFF1A0050)
+        }
+        else -> when (s.type) {
+            SeekerType.MINUTE_REMINDER -> Color(0xFFFF6B6B)
+            SeekerType.SOCIAL_ANXIETY -> Color(0xFFFFB5D8)
+            SeekerType.LOGICAL_DEBATER -> Color(0xFF00E5FF)
+            SeekerType.OPTIONAL_OBLIGATION -> Color(0xFFFFB347)
+        }
+    }
+
+    val r = ts * 0.42f
+
+    if (!eaten) {
+        // Top dome.
+        drawArc(
+            color = bodyColor,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = Offset(cx - r, cy - r),
+            size = Size(r * 2f, r * 1.4f),
+        )
+        // Body.
+        drawRect(
+            color = bodyColor,
+            topLeft = Offset(cx - r, cy - r * 0.3f),
+            size = Size(r * 2f, r * 0.95f),
+        )
+        // Three wavy feet.
+        val bumpR = r / 3f
+        val footY = cy + r * 0.65f
+        for (i in 0..2) {
+            val bcx = cx - r + bumpR + i * bumpR * 2f
+            drawArc(
+                color = bodyColor,
+                startAngle = 0f,
+                sweepAngle = 180f,
+                useCenter = true,
+                topLeft = Offset(bcx - bumpR, footY - bumpR),
+                size = Size(bumpR * 2f, bumpR * 2f),
+            )
+        }
+    }
+
+    if (frightened) {
+        // Two small white eye dots.
+        drawCircle(Color.White, ts * 0.05f, Offset(cx - ts * 0.11f, cy - ts * 0.06f))
+        drawCircle(Color.White, ts * 0.05f, Offset(cx + ts * 0.11f, cy - ts * 0.06f))
+    } else {
+        // Directional eyes (whites + pupils that lean with travel).
+        val eyeR = ts * 0.10f
+        val pupilR = ts * 0.055f
+        val eyeDX = ts * 0.13f
+        val eyeDY = ts * 0.10f
+        val leanX = s.dir.dc * ts * 0.05f
+        val leanY = s.dir.dr * ts * 0.05f
+        for (side in listOf(-1f, 1f)) {
+            val ex = cx + side * eyeDX
+            val ey = cy - eyeDY
+            drawCircle(Color.White, eyeR, Offset(ex, ey))
+            drawCircle(pupilColor, pupilR, Offset(ex + leanX, ey + leanY))
         }
     }
 }
