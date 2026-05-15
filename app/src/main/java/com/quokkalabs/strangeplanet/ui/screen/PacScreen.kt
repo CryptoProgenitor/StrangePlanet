@@ -330,19 +330,28 @@ fun PacScreen(
                             )
                             .padding(horizontal = 22.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(28.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         HudStat("SUSTENANCE", state.score.toString())
                         HudStat("RECORD", state.highScore.toString())
                         HudStat("DESIGNATION", "TIER ${state.level}")
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        repeat(state.lives.coerceAtLeast(0)) {
-                            Image(
-                                bitmap = avatarBitmap,
-                                contentDescription = null,
-                                modifier = Modifier.size(22.dp),
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "ATTEMPTS",
+                                color = Color.White.copy(alpha = 0.45f),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
                             )
+                            Spacer(Modifier.height(4.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                repeat(state.lives.coerceAtLeast(0)) {
+                                    Image(
+                                        bitmap = avatarBitmap,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
                         }
                     }
                     if (state.frightenedTick > 0 && settings.showSayings) {
