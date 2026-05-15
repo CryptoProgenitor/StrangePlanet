@@ -157,7 +157,7 @@ fun PacScreen(
         }
     }
 
-    CosmicBackground(showStars = false) {
+    CosmicBackground(showStars = true) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val screenWidth = with(density) { maxWidth.toPx() }
             val screenHeight = with(density) { maxHeight.toPx() }
@@ -204,7 +204,7 @@ fun PacScreen(
                     // Maze floor — cuts the cosmic background through so the
                     // grid reads as a discrete playfield.
                     drawRect(
-                        color = DeepNavy.copy(alpha = 0.45f),
+                        color = DeepNavy.copy(alpha = 0.97f),
                         topLeft = Offset(state.originX, state.originY),
                         size = Size(state.cols * ts, state.rows * ts),
                     )
@@ -313,7 +313,7 @@ fun PacScreen(
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 20.dp),
+                        .padding(top = 76.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(
