@@ -13,16 +13,18 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.quokkalabs.strangeplanet.ui.screen.InteractiveScreen
 import com.quokkalabs.strangeplanet.ui.screen.PlanetaryBulletin
+import com.quokkalabs.strangeplanet.ui.screen.PacScreen
 import com.quokkalabs.strangeplanet.ui.screen.PongScreen
 import com.quokkalabs.strangeplanet.ui.screen.SettingsScreen
 import com.quokkalabs.strangeplanet.ui.screen.SpaceInvadersScreen
 import com.quokkalabs.strangeplanet.ui.theme.StrangePlanetTheme
+import com.quokkalabs.strangeplanet.ui.viewmodel.PacViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.PongViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.SpaceInvadersViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.StrangePlanetViewModel
 
 private enum class Screen {
-    INTERACTIVE, SETTINGS, PONG, SPACE_INVADERS
+    INTERACTIVE, SETTINGS, PONG, SPACE_INVADERS, PACMAN
 }
 
 class MainActivity : ComponentActivity() {
@@ -61,6 +63,13 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = Screen.INTERACTIVE },
                             )
                         }
+                        Screen.PACMAN -> {
+                            val pacViewModel: PacViewModel = viewModel()
+                            PacScreen(
+                                viewModel = pacViewModel,
+                                onBack = { screen = Screen.INTERACTIVE },
+                            )
+                        }
                     }
 
                     if (showBulletin && screen == Screen.INTERACTIVE) {
@@ -72,6 +81,10 @@ class MainActivity : ComponentActivity() {
                             onNavigateToSpaceInvaders = {
                                 showBulletin = false
                                 screen = Screen.SPACE_INVADERS
+                            },
+                            onNavigateToPacman = {
+                                showBulletin = false
+                                screen = Screen.PACMAN
                             },
                             onNavigateToSettings = {
                                 showBulletin = false

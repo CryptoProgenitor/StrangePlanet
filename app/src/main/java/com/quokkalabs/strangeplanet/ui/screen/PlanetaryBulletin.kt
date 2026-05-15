@@ -37,6 +37,7 @@ import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 fun PlanetaryBulletin(
     onNavigateToGame: () -> Unit,
     onNavigateToSpaceInvaders: () -> Unit,
+    onNavigateToPacman: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -126,6 +127,15 @@ fun PlanetaryBulletin(
                 title = "Descending Entity Defence",
                 subtitle = "Neutralise hostile creatures",
                 onClick = onNavigateToSpaceInvaders,
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            BulletinCard(
+                emoji = "🟡",
+                title = "Sustenance Pursuit",
+                subtitle = "Consume stars; evade perished beings",
+                onClick = onNavigateToPacman,
             )
 
             Spacer(Modifier.height(10.dp))
