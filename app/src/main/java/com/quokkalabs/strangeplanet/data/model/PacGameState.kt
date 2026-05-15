@@ -37,6 +37,22 @@ enum class SeekerType {
 
 enum class SeekerMode { SCATTER, CHASE, FRIGHTENED, EATEN }
 
+/**
+ * Single-device play (SOLO) or a local two-being Bluetooth contest where the
+ * host runs the authoritative maze as The Being and the client steers one
+ * seeker. Reuses the Bt* lobby types shared with Sphere Deflection.
+ */
+enum class PacMode { SOLO, BT_HOST, BT_CLIENT }
+
+/** Strange-Planet designations for the four seekers (lobby + adversary HUD). */
+val SeekerType.designation: String
+    get() = when (this) {
+        SeekerType.MINUTE_REMINDER -> "The Minute Reminder"
+        SeekerType.SOCIAL_ANXIETY -> "The Social Anxiety"
+        SeekerType.LOGICAL_DEBATER -> "The Logical Debater"
+        SeekerType.OPTIONAL_OBLIGATION -> "The Optional Obligation"
+    }
+
 data class SeekerEntity(
     val type: SeekerType,
     val col: Int,
@@ -99,4 +115,8 @@ data class PacGameState(
     val frightenedTick: Int = 0,
     // Consecutive perished beings consumed in the current frightened window
     val frightenedCombo: Int = 0,
+    // SOLO, or a Bluetooth host/client contest.
+    val mode: PacMode = PacMode.SOLO,
+    // In a contest, the seeker steered by the adversary being (null = none).
+    val controlledSeekerType: SeekerType? = null,
 )

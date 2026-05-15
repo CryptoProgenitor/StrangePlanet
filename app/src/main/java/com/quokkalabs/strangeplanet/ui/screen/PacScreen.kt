@@ -1,5 +1,6 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import android.Manifest
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.media.AudioManager
@@ -9,6 +10,8 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -28,12 +31,16 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
@@ -69,12 +76,17 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.quokkalabs.strangeplanet.R
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
+import com.quokkalabs.strangeplanet.data.model.BtConnectionState
+import com.quokkalabs.strangeplanet.data.model.BtRole
 import com.quokkalabs.strangeplanet.data.model.PacAvatar
 import com.quokkalabs.strangeplanet.data.model.PacDir
+import com.quokkalabs.strangeplanet.data.model.PacMode
 import com.quokkalabs.strangeplanet.data.model.PacPhase
 import com.quokkalabs.strangeplanet.data.model.SeekerEntity
 import com.quokkalabs.strangeplanet.data.model.SeekerMode
 import com.quokkalabs.strangeplanet.data.model.SeekerType
+import com.quokkalabs.strangeplanet.data.model.designation
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
@@ -91,9 +103,35 @@ fun PacScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val settings by viewModel.pacSettings.collectAsState()
+    val btState by viewModel.btState.collectAsState()
+    val pickedSeeker by viewModel.pickedSeeker.collectAsState()
+    val btLobbyActive by viewModel.btLobbyActive.collectAsState()
     val density = LocalDensity.current
     val view = LocalView.current
     val context = LocalContext.current
+
+    val btPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        viewModel.updateBtPermissions(results.values.all { it })
+    }
+    fun requestBtPermissions() {
+        val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_ADVERTISE,
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.BLUETOOTH,
+                Manifest.permission.BLUETOOTH_ADMIN,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            )
+        }
+        btPermissionLauncher.launch(perms)
+    }
+    val isClient = state.mode == PacMode.BT_CLIENT
 
     DisposableEffect(Unit) {
         val window = (view.context as? android.app.Activity)?.window
@@ -321,6 +359,7 @@ fun PacScreen(
                             originY = state.originY,
                             ts = ts,
                             frightenedTick = state.frightenedTick,
+                            isControlled = s.type == state.controlledSeekerType,
                         )
                     }
 
@@ -347,6 +386,65 @@ fun PacScreen(
                 }
 
                 // HUD — full deadpan terminology
+                if (isClient) {
+                    val seekerS = state.seekers.firstOrNull {
+                        it.type == state.controlledSeekerType
+                    }
+                    val stance = when {
+                        seekerS == null -> "DORMANT"
+                        seekerS.penTimer > 0 -> "RECONSTITUTING"
+                        seekerS.mode == SeekerMode.EATEN -> "DISEMBODIED"
+                        seekerS.mode == SeekerMode.FRIGHTENED -> "VULNERABLE"
+                        else -> "PURSUING"
+                    }
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 76.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .widthIn(max = 300.dp)
+                                .background(
+                                    DeepNavy.copy(alpha = 0.78f),
+                                    RoundedCornerShape(14.dp),
+                                )
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                "YOU STEER",
+                                color = Color.White.copy(alpha = 0.45f),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                state.controlledSeekerType?.designation ?: "—",
+                                color = AlienPink,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                HudStat("STANCE", stance)
+                                HudStat("BEING INTEGRITY", state.lives.toString())
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "INTERCEPT THE BEING",
+                            color = Color(0xFFB9F6CA),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                } else
                 Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -397,22 +495,43 @@ fun PacScreen(
                 }
 
                 when (state.phase) {
-                    PacPhase.READY -> CenterBanner(
-                        title = "PREPARE FOR PURSUIT",
-                        subtitle = "Gesture in any direction to commence locomotion.",
+                    PacPhase.READY -> PacLobby(
+                        btLobbyActive = btLobbyActive,
+                        btState = btState,
+                        pickedSeeker = pickedSeeker,
+                        onSolo = { viewModel.selectSoloMode() },
+                        onBt = { viewModel.selectBtMode() },
+                        onCommenceSolo = { viewModel.onTapToStart() },
+                        onHost = { viewModel.btHost() },
+                        onScan = { viewModel.btScan() },
+                        onStopScan = { viewModel.btStopScan() },
+                        onConnect = { viewModel.btConnect(it) },
+                        onDisconnect = { viewModel.btDisconnect() },
+                        onRequestPermissions = { requestBtPermissions() },
+                        onSelectSeeker = { viewModel.selectSeeker(it) },
+                        onCommenceContest = { viewModel.startBtContest() },
                     )
                     PacPhase.DYING -> CenterBanner(
-                        title = "THIS IS NOT IDEAL",
-                        subtitle = "A perished being made contact. Reconstituting.",
+                        title = if (isClient) "THE BEING FALTERS" else "THIS IS NOT IDEAL",
+                        subtitle = if (isClient)
+                            "Contact achieved. Integrity diminished."
+                        else
+                            "A perished being made contact. Reconstituting.",
                     )
                     PacPhase.LEVEL_CLEARED -> CenterBanner(
-                        title = "VIBRATION EMOTION",
-                        subtitle = state.activeSaying ?: "ALL STARS CONSUMED.",
+                        title = if (isClient) "THE BEING PREVAILED" else "VIBRATION EMOTION",
+                        subtitle = if (isClient)
+                            "All stars consumed. A new tier commences."
+                        else
+                            (state.activeSaying ?: "ALL STARS CONSUMED."),
                     )
                     PacPhase.GAME_OVER -> CenterBanner(
-                        title = "PURSUIT CONCLUDED",
-                        subtitle = "Sustenance ${state.score} · Record " +
-                            "${state.highScore}\nTap to attempt the activity again.",
+                        title = if (isClient) "INTERCEPTION ACHIEVED" else "PURSUIT CONCLUDED",
+                        subtitle = if (isClient)
+                            "The being's integrity is depleted.\nYou have prevailed."
+                        else
+                            "Sustenance ${state.score} · Record " +
+                                "${state.highScore}\nTap to attempt the activity again.",
                     )
                     PacPhase.PAUSED -> CenterBanner(
                         title = "ACTIVITY SUSPENDED",
@@ -436,21 +555,23 @@ fun PacScreen(
                 Text("←", fontSize = 22.sp)
             }
 
-            // Settings button
-            FloatingActionButton(
-                onClick = {
-                    showSettings = true
-                    viewModel.pauseGame()
-                },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 20.dp, end = 14.dp)
-                    .size(44.dp),
-                shape = CircleShape,
-                containerColor = DeepNavy.copy(alpha = 0.75f),
-                contentColor = AlienPink,
-            ) {
-                Text("⚙", fontSize = 20.sp)
+            // Settings button (single-being only — a contest cannot suspend)
+            if (state.mode == PacMode.SOLO) {
+                FloatingActionButton(
+                    onClick = {
+                        showSettings = true
+                        viewModel.pauseGame()
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 20.dp, end = 14.dp)
+                        .size(44.dp),
+                    shape = CircleShape,
+                    containerColor = DeepNavy.copy(alpha = 0.75f),
+                    contentColor = AlienPink,
+                ) {
+                    Text("⚙", fontSize = 20.sp)
+                }
             }
 
             if (showSettings) {
@@ -575,9 +696,21 @@ private fun DrawScope.drawSeeker(
     originY: Float,
     ts: Float,
     frightenedTick: Int,
+    isControlled: Boolean = false,
 ) {
     val cx = originX + (s.col + s.dir.dc * s.progress + 0.5f) * ts
     val cy = originY + (s.row + s.dir.dr * s.progress + 0.5f) * ts
+
+    // Adversary-steered seeker — a luminous tag so both beings can track it.
+    if (isControlled) {
+        drawCircle(Color(0xFFB9F6CA).copy(alpha = 0.22f), ts * 0.62f, Offset(cx, cy))
+        drawCircle(
+            color = Color(0xFFB9F6CA).copy(alpha = 0.85f),
+            radius = ts * 0.52f,
+            center = Offset(cx, cy),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = ts * 0.07f),
+        )
+    }
 
     val pupilColor = Color(0xFF1A0050)
     val frightened = s.mode == SeekerMode.FRIGHTENED && frightenedTick > 0
@@ -697,6 +830,379 @@ private fun BoxScope.CenterBanner(
             textAlign = TextAlign.Center,
         )
     }
+}
+
+// ─── Pre-Pursuit Lobby (single-being / nearby adversary) ─────────────────────
+
+private fun seekerColor(type: SeekerType): Color = when (type) {
+    SeekerType.MINUTE_REMINDER -> Color(0xFFFF6B6B)
+    SeekerType.SOCIAL_ANXIETY -> Color(0xFFFFB5D8)
+    SeekerType.LOGICAL_DEBATER -> Color(0xFF00E5FF)
+    SeekerType.OPTIONAL_OBLIGATION -> Color(0xFFFFB347)
+}
+
+@Composable
+private fun PacLobby(
+    btLobbyActive: Boolean,
+    btState: BluetoothLobbyState,
+    pickedSeeker: SeekerType,
+    onSolo: () -> Unit,
+    onBt: () -> Unit,
+    onCommenceSolo: () -> Unit,
+    onHost: () -> Unit,
+    onScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onRequestPermissions: () -> Unit,
+    onSelectSeeker: (SeekerType) -> Unit,
+    onCommenceContest: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable { /* absorb taps so the maze does not start */ },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .fillMaxHeight(0.88f)
+                .background(DeepNavy.copy(alpha = 0.92f), RoundedCornerShape(20.dp))
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "Sustenance Pursuit",
+                color = AlienPink,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Select participants:",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PacModeButton("Singular", !btLobbyActive, Modifier.weight(1f)) { onSolo() }
+                PacModeButton(
+                    "Nearby\nAdversary",
+                    btLobbyActive,
+                    Modifier.weight(1f),
+                ) { onBt() }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            if (!btLobbyActive) {
+                Text(
+                    "Consume every star. Evade\nthe four perished beings.",
+                    color = Color.White.copy(alpha = 0.55f),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(16.dp))
+                PacLobbyButton("Commence Activity") { onCommenceSolo() }
+            } else {
+                PacBtLobby(
+                    btState = btState,
+                    pickedSeeker = pickedSeeker,
+                    onHost = onHost,
+                    onScan = onScan,
+                    onStopScan = onStopScan,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect,
+                    onRequestPermissions = onRequestPermissions,
+                    onSelectSeeker = onSelectSeeker,
+                    onCommenceContest = onCommenceContest,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PacBtLobby(
+    btState: BluetoothLobbyState,
+    pickedSeeker: SeekerType,
+    onHost: () -> Unit,
+    onScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onRequestPermissions: () -> Unit,
+    onSelectSeeker: (SeekerType) -> Unit,
+    onCommenceContest: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "The host being is The Being.\nThe distant being steers one seeker.",
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(14.dp))
+
+        when {
+            !btState.available -> Text(
+                "This device lacks\nfrequency hardware.",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+            )
+
+            !btState.permissionsGranted -> {
+                Text(
+                    "Frequency access\nauthorization required.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(10.dp))
+                PacLobbyButton("Grant Access") { onRequestPermissions() }
+            }
+
+            !btState.enabled -> Text(
+                "Activate your frequency\ntransmitter in device settings.",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+            )
+
+            else -> when (btState.connectionState) {
+                BtConnectionState.IDLE -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PacLobbyButton("Broadcast\nPresence") { onHost() }
+                        PacLobbyButton("Detect\nBeings") { onScan() }
+                    }
+                    if (btState.pairedDevices.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Known Beings:",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        btState.pairedDevices.forEach { d ->
+                            DeviceRow(d.name) { onConnect(d.address) }
+                        }
+                    }
+                }
+
+                BtConnectionState.HOSTING -> {
+                    Text(
+                        "Broadcasting presence...\nAwaiting distant being...",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    PacLobbyButton("Cancel") { onDisconnect() }
+                }
+
+                BtConnectionState.SCANNING -> {
+                    Text(
+                        "Scanning for beings...",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    btState.discoveredDevices.forEach { d ->
+                        DeviceRow(d.name) { onConnect(d.address) }
+                    }
+                    btState.pairedDevices.forEach { d ->
+                        DeviceRow(d.name) { onConnect(d.address) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    PacLobbyButton("Stop") { onStopScan() }
+                }
+
+                BtConnectionState.CONNECTING -> Text(
+                    "Establishing\nfrequency link...",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+
+                BtConnectionState.CONNECTED -> {
+                    Text(
+                        "Frequency link established!",
+                        color = Color(0xFFB9F6CA),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                    )
+                    btState.connectedDeviceName?.let {
+                        Text(
+                            "Linked: $it",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
+
+                    if (btState.role == BtRole.CLIENT) {
+                        Text(
+                            "Select the seeker\nyou will steer:",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        SeekerType.entries.forEach { t ->
+                            SeekerPickRow(
+                                type = t,
+                                selected = t == pickedSeeker,
+                                onClick = { onSelectSeeker(t) },
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Choice transmitted.\nAwaiting the host being...",
+                            color = Color.White.copy(alpha = 0.45f),
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    } else {
+                        Text(
+                            "The distant being steers:",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .background(seekerColor(pickedSeeker), CircleShape),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                pickedSeeker.designation,
+                                color = AlienPink,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        PacLobbyButton("Commence Contest") { onCommenceContest() }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "Sever Link",
+                        color = Color.White.copy(alpha = 0.45f),
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .clickable { onDisconnect() }
+                            .padding(6.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeekerPickRow(
+    type: SeekerType,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (selected) AlienPink.copy(alpha = 0.18f)
+                else Color.White.copy(alpha = 0.06f),
+                RoundedCornerShape(10.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(16.dp)
+                .background(seekerColor(type), CircleShape),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            type.designation,
+            color = if (selected) AlienPink else Color.White.copy(alpha = 0.75f),
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        )
+    }
+    Spacer(Modifier.height(6.dp))
+}
+
+@Composable
+private fun DeviceRow(name: String, onClick: () -> Unit) {
+    Text(
+        text = name,
+        color = AlienPink,
+        fontSize = 13.sp,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .fillMaxWidth(),
+    )
+    Spacer(Modifier.height(4.dp))
+}
+
+@Composable
+private fun PacModeButton(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .background(
+                if (selected) AlienPink.copy(alpha = 0.85f)
+                else Color.White.copy(alpha = 0.12f),
+                RoundedCornerShape(10.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) Color.White else Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun PacLobbyButton(label: String, onClick: () -> Unit) {
+    Text(
+        text = label,
+        color = Color.White,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .background(AlienPink.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    )
 }
 
 /**

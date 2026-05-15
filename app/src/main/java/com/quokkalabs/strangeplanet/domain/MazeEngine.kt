@@ -202,6 +202,70 @@ class MazeEngine(
             } ?: PacDir.NONE
     }
 
+    // First legal non-reversing move (corner fallback for a steered seeker so
+    // it never deadlocks when the adversary holds an impossible direction).
+    private fun firstLegalDir(col: Int, row: Int, current: PacDir): PacDir {
+        val opposite = current.opposite()
+        return listOf(PacDir.UP, PacDir.LEFT, PacDir.DOWN, PacDir.RIGHT)
+            .firstOrNull { d ->
+                d != opposite && !isWall(wrapCol(col + d.dc, row), row + d.dr)
+            } ?: PacDir.NONE
+    }
+
+    // Human-steered seeker (adversary being). Mirrors the being's control feel:
+    // queued turn adopted at tile centres, mid-tile reversal allowed; falls back
+    // to any legal turn so a held wall-ward input cannot freeze it mid-maze.
+    private fun movePlayerSeeker(
+        s: SeekerEntity,
+        want: PacDir,
+        speed: Float,
+        mode: SeekerMode,
+    ): SeekerEntity {
+        var col = s.col
+        var row = s.row
+        var dir = s.dir
+        var progress = s.progress
+
+        if (dir == PacDir.NONE) {
+            dir = if (want != PacDir.NONE &&
+                !isWall(wrapCol(col + want.dc, row), row + want.dr)
+            ) {
+                want
+            } else {
+                firstLegalDir(col, row, PacDir.NONE)
+            }
+            if (dir == PacDir.NONE) return s.copy(mode = mode)
+        }
+
+        if (want != PacDir.NONE && want == dir.opposite()) {
+            dir = want
+            progress = 1f - progress
+        }
+
+        progress += speed
+        while (progress >= 1f) {
+            col = wrapCol(col + dir.dc, row)
+            row += dir.dr
+            progress -= 1f
+
+            if (want != PacDir.NONE && want != dir.opposite() &&
+                !isWall(wrapCol(col + want.dc, row), row + want.dr)
+            ) {
+                dir = want
+            } else if (isWall(wrapCol(col + dir.dc, row), row + dir.dr)) {
+                val alt = firstLegalDir(col, row, dir)
+                if (alt != PacDir.NONE) {
+                    dir = alt
+                } else {
+                    dir = PacDir.NONE
+                    progress = 0f
+                    break
+                }
+            }
+        }
+        return s.copy(col = col, row = row, dir = dir, progress = progress, mode = mode)
+    }
+
     // Pseudo-random direction for frightened mode (deterministic, no Random state).
     private fun seekerFrightenedDir(s: SeekerEntity, seed: Int): PacDir {
         val opposite = s.dir.opposite()
@@ -219,6 +283,8 @@ class MazeEngine(
         newWaveTick: Int,
         newFrightenedTick: Int,
         level: Int,
+        humanControlled: Boolean = false,
+        humanDir: PacDir = PacDir.NONE,
     ): SeekerEntity {
         // Regenerated seeker dwelling in the pen: frozen, body shown, no
         // collision (handled by caller), counting down to re-entry.
@@ -237,6 +303,15 @@ class MazeEngine(
             SeekerMode.FRIGHTENED -> BASE_SPEED * 0.50f * (1f + (level - 1) * 0.03f)
             SeekerMode.EATEN -> BASE_SPEED * 2.0f
             else -> BASE_SPEED * 0.80f * (1f + (level - 1) * 0.05f)
+        }
+
+        // Adversary-steered seeker: only while it can actively hunt. When
+        // FRIGHTENED (fleeing) or EATEN (returning home) it reverts to the
+        // automatic behaviour so the chase/recovery resolves predictably.
+        if (humanControlled &&
+            (effectiveMode == SeekerMode.SCATTER || effectiveMode == SeekerMode.CHASE)
+        ) {
+            return movePlayerSeeker(s, humanDir, speed, effectiveMode)
         }
 
         var col = s.col
@@ -295,6 +370,9 @@ class MazeEngine(
         score: Int = 0,
         lives: Int = 3,
         highScore: Int = 0,
+        mode: com.quokkalabs.strangeplanet.data.model.PacMode =
+            com.quokkalabs.strangeplanet.data.model.PacMode.SOLO,
+        controlledSeekerType: SeekerType? = null,
     ): PacGameState {
         var spawnCol = cols / 2
         var spawnRow = rows / 2
@@ -341,6 +419,8 @@ class MazeEngine(
             waveTick = 0,
             frightenedTick = 0,
             frightenedCombo = 0,
+            mode = mode,
+            controlledSeekerType = controlledSeekerType,
         )
     }
 
@@ -362,6 +442,7 @@ class MazeEngine(
         state: PacGameState,
         requestedDir: PacDir?,
         speedFactor: Float = 1f,
+        seekerDir: PacDir? = null,
     ): PacGameState {
         val queued = requestedDir ?: PacDir.NONE
         return when (state.phase) {
@@ -370,12 +451,17 @@ class MazeEngine(
                     state.copy(being = state.being.copy(queuedDir = queued))
                 else state,
                 speedFactor = speedFactor.coerceIn(0f, 1f),
+                seekerDir = seekerDir ?: PacDir.NONE,
             )
             else -> state
         }
     }
 
-    private fun updatePlaying(state: PacGameState, speedFactor: Float = 1f): PacGameState {
+    private fun updatePlaying(
+        state: PacGameState,
+        speedFactor: Float = 1f,
+        seekerDir: PacDir = PacDir.NONE,
+    ): PacGameState {
         var b = state.being
         var col = b.col
         var row = b.row
@@ -459,6 +545,7 @@ class MazeEngine(
             else s
         } else state.seekers
 
+        val controlled = state.controlledSeekerType
         var movedSeekers = seedSeekers.map { s ->
             updateSeeker(
                 s = s,
@@ -467,6 +554,8 @@ class MazeEngine(
                 newWaveTick = newWaveTick,
                 newFrightenedTick = newFrightenedTick,
                 level = state.level,
+                humanControlled = controlled != null && s.type == controlled,
+                humanDir = seekerDir,
             )
         }
 
