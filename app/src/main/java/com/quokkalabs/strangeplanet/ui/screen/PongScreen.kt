@@ -357,13 +357,13 @@ fun PongScreen(
                         onClick = { viewModel.requestPause() },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(top = 24.dp, end = 12.dp)
-                            .size(36.dp),
+                            .padding(top = 20.dp, end = 14.dp)
+                            .size(44.dp),
                         shape = CircleShape,
-                        containerColor = AlienPink.copy(alpha = 0.5f),
-                        contentColor = DeepNavy,
+                        containerColor = DeepNavy.copy(alpha = 0.75f),
+                        contentColor = AlienPink,
                     ) {
-                        Text("⏸", fontSize = 12.sp)
+                        Text("⏸", fontSize = 18.sp)
                     }
                 }
 
@@ -382,13 +382,13 @@ fun PongScreen(
                     },
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .padding(top = 24.dp, start = 12.dp)
-                        .size(36.dp),
+                        .padding(top = 20.dp, start = 14.dp)
+                        .size(44.dp),
                     shape = CircleShape,
-                    containerColor = AlienPink.copy(alpha = 0.5f),
-                    contentColor = DeepNavy,
+                    containerColor = DeepNavy.copy(alpha = 0.75f),
+                    contentColor = AlienPink,
                 ) {
-                    Text("←", fontSize = 14.sp)
+                    Text("←", fontSize = 22.sp)
                 }
 
                 // Exit confirmation
