@@ -86,6 +86,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
 
     // Lerp for opponent (host) paddle – still useful at 30 Hz
     private var smoothAiPaddleX = 0f
+    // Previous client paddle X used to estimate spin velocity for tryDetectClientHit
+    private var prevClientPaddleX: Float? = null
 
     // Bot auto-play: counts down to zero before triggering tap-to-start
     private var botStartCountdown = 0
@@ -487,8 +489,13 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         // POINT_SCORED would lose the pending hit before the rally counter updates,
         // causing ghost suspects even when the hit was actually adopted.
         val phase = GamePhase.entries.getOrElse(net.phaseOrdinal) { GamePhase.READY }
+        val halfPaddle = eng.paddleWidth / 2f
+        val currPaddleX = playerTouchX?.coerceIn(halfPaddle, sw - halfPaddle)
+        val clientPaddleVelocity = if (prevClientPaddleX != null && currPaddleX != null)
+            currPaddleX - prevClientPaddleX!! else 0f
+        prevClientPaddleX = currPaddleX
         if (phase == GamePhase.PLAYING && !clientHitSentThisRally) {
-            tryDetectClientHit(net, eng, sw, sh)
+            tryDetectClientHit(net, eng, sw, sh, clientPaddleVelocity)
         }
 
         // Opponent (host) paddle: lerp is still beneficial at 30 Hz
@@ -567,6 +574,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         eng: PongEngine,
         sw: Float,
         sh: Float,
+        paddleVelocity: Float = 0f,
     ) {
         if (drVy <= 0f) return                             // not moving toward player paddle
         val paddleSurface = eng.playerPaddleY - eng.paddleHeight
@@ -584,7 +592,8 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         val angle = hitPos * eng.maxDeflection
         val speed = (eng.ballBaseSpeed + drLastRally * eng.speedRampPerHit)
             .coerceAtMost(eng.ballMaxSpeed)
-        drVx = speed * sin(angle)
+        drVx = (speed * sin(angle) + paddleVelocity * eng.spinFactor)
+            .coerceIn(-speed * 0.92f, speed * 0.92f)
         drVy = -speed * cos(angle)                         // going up in client frame
         drBallY = paddleSurface - eng.ballRadius
         clientHitSentThisRally = true
@@ -1050,6 +1059,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         clientHitSentThisRally = false
         lastProcessedRemoteState = null
         smoothAiPaddleX = 0f
+        prevClientPaddleX = null
         botStartCountdown = 0
         botSweepPhase = 0
         botSweepLastRally = -1

@@ -23,6 +23,9 @@ class PongEngine(
         private const val MAX_DEFLECTION_DEG = 55f
     }
 
+    val spinFactor = 0.35f          // paddle-velocity contribution to ball vx on hit
+    private val maxSpinRatio = 0.92f // |vx| capped at speed × this (≈ 67° effective angle)
+
     val playerPaddleY = screenHeight * 0.85f
     val aiPaddleY = screenHeight * 0.15f
     val paddleHeight = screenHeight * 0.012f
@@ -166,6 +169,7 @@ class PongEngine(
         } else {
             state.playerPaddleX
         }
+        val playerPaddleVx = newPlayerX - state.playerPaddleX
 
         // Top paddle: AI in single player, player 2 touch in multiplayer
         val newAiX = if (state.gameMode != GameMode.SINGLE_PLAYER) {
@@ -180,6 +184,7 @@ class PongEngine(
             (state.aiPaddleX + (aiTarget - state.aiPaddleX) * aiTrackingFactor)
                 .coerceIn(halfPaddle, screenWidth - halfPaddle)
         }
+        val aiPaddleVx = newAiX - state.aiPaddleX
 
         // Move ball
         var bx = state.ballX + state.ballVx
@@ -213,7 +218,8 @@ class PongEngine(
                 val hitPos = ((bx - newPlayerX) / halfPaddle).coerceIn(-1f, 1f)
                 val angle = hitPos * maxDeflection
                 val speed = (ballBaseSpeed + rally * speedRampPerHit).coerceAtMost(ballMaxSpeed)
-                vx = speed * sin(angle)
+                vx = (speed * sin(angle) + playerPaddleVx * spinFactor)
+                    .coerceIn(-speed * maxSpinRatio, speed * maxSpinRatio)
                 vy = -speed * cos(angle)
                 by = playerPaddleY - paddleHeight - ballRadius
                 rally++
@@ -240,7 +246,8 @@ class PongEngine(
                 val hitPos = ((bx - newAiX) / halfPaddle).coerceIn(-1f, 1f)
                 val angle = hitPos * maxDeflection
                 val speed = (ballBaseSpeed + rally * speedRampPerHit).coerceAtMost(ballMaxSpeed)
-                vx = speed * sin(angle)
+                vx = (speed * sin(angle) + aiPaddleVx * spinFactor)
+                    .coerceIn(-speed * maxSpinRatio, speed * maxSpinRatio)
                 vy = speed * cos(angle)
                 by = aiPaddleY + paddleHeight + ballRadius
                 rally++

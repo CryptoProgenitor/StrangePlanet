@@ -177,11 +177,44 @@ fun PongScreen(
             )
 
             if (state.screenWidth > 0f) {
-                // Game canvas
+                // Score pill — rendered above stars but behind the ball canvas
+                val topCreature = if (state.gameMode == GameMode.SINGLE_PLAYER) opponentCreature else player2Creature
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(30.dp))
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Image(
+                        painter = painterResource(id = topCreature),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .graphicsLayer { alpha = 0.75f },
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "${state.aiScore}  —  ${state.playerScore}",
+                        color = Color.White.copy(alpha = 0.80f),
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Image(
+                        painter = painterResource(id = playerCreature),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .graphicsLayer { alpha = 0.75f },
+                    )
+                }
+
+                // Game canvas (ball, paddles, trail — drawn above score pill)
                 GameCanvas(state = state)
 
                 // Top creature (AI / player 2)
-                val topCreature = if (state.gameMode == GameMode.SINGLE_PLAYER) opponentCreature else player2Creature
                 PongCreature(
                     drawableRes = topCreature,
                     paddleX = state.aiPaddleX,
@@ -198,38 +231,6 @@ fun PongScreen(
                     isFlipped = false,
                     hitPulse = state.playerHitPulse,
                 )
-
-                // Score with creature icons
-                Row(
-                    modifier = Modifier.align(Alignment.Center),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    // Top player's creature icon (left side)
-                    Image(
-                        painter = painterResource(id = topCreature),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .graphicsLayer { alpha = 0.35f },
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "${state.aiScore}  —  ${state.playerScore}",
-                        color = Color.White.copy(alpha = 0.25f),
-                        fontSize = 44.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    // Bottom player's creature icon (right side)
-                    Image(
-                        painter = painterResource(id = playerCreature),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .graphicsLayer { alpha = 0.35f },
-                    )
-                }
 
                 // Active saying (gated by settings)
                 if (settings.showSayings) {
