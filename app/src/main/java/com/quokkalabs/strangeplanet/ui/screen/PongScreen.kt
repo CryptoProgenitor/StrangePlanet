@@ -2,6 +2,7 @@ package com.quokkalabs.strangeplanet.ui.screen
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -97,6 +98,7 @@ fun PongScreen(
     val player2Creature by viewModel.player2Creature.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
+    var gameOverReady by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val view = LocalView.current
 
@@ -114,6 +116,28 @@ fun PongScreen(
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.show(WindowInsetsCompat.Type.systemBars())
             }
+        }
+    }
+
+    // Android Back button — mirrors the on-screen back FAB
+    BackHandler {
+        val phase = state.phase
+        if (phase == GamePhase.READY || phase == GamePhase.GAME_OVER) {
+            if (state.gameMode == GameMode.BLUETOOTH) viewModel.btDisconnect()
+            if (state.gameMode == GameMode.ONLINE) viewModel.onlineDisconnect()
+            viewModel.resetGame(); onBack()
+        } else {
+            if (phase == GamePhase.PLAYING) viewModel.requestPause()
+            showExitConfirm = true
+        }
+    }
+
+    // Lock out rematch button for 2s after game ends so score can be read
+    LaunchedEffect(state.phase) {
+        if (state.phase == GamePhase.GAME_OVER) {
+            gameOverReady = false
+            kotlinx.coroutines.delay(2000)
+            gameOverReady = true
         }
     }
 
@@ -144,9 +168,6 @@ fun PongScreen(
                                 event.changes.forEach { change ->
                                     if (change.pressed) {
                                         viewModel.onTouch(change.position.x, change.position.y)
-                                        if (state.phase == GamePhase.READY || state.phase == GamePhase.GAME_OVER) {
-                                            viewModel.onTapToStart()
-                                        }
                                     }
                                     change.consume()
                                 }
@@ -231,6 +252,7 @@ fun PongScreen(
                         gameMode = state.gameMode,
                         onModeSelected = { viewModel.selectMode(it) },
                         onConfigure = { showSettings = true },
+                        onCommence = { viewModel.onTapToStart() },
                         selectedCreature = playerCreature,
                         onSelectCreature = { viewModel.selectCreature(it) },
                         selectedPlayer2Creature = player2Creature,
@@ -269,6 +291,8 @@ fun PongScreen(
                         playerScore = state.playerScore,
                         aiScore = state.aiScore,
                         gameMode = state.gameMode,
+                        readyForRematch = gameOverReady,
+                        onRematch = { viewModel.onTapToStart() },
                         modifier = Modifier.align(Alignment.Center),
                     )
 
@@ -616,6 +640,7 @@ private fun ReadyOverlay(
     gameMode: GameMode,
     onModeSelected: (GameMode) -> Unit,
     onConfigure: () -> Unit,
+    onCommence: () -> Unit,
     selectedCreature: Int,
     onSelectCreature: (Int) -> Unit,
     selectedPlayer2Creature: Int,
@@ -813,6 +838,7 @@ private fun ReadyOverlay(
                     onConnect = onBtConnect,
                     onDisconnect = onBtDisconnect,
                     onRequestPermissions = onRequestBtPermissions,
+                    onCommence = onCommence,
                 )
             }
             GameMode.ONLINE -> {
@@ -821,15 +847,12 @@ private fun ReadyOverlay(
                     onCreate = onOnlineCreate,
                     onJoin = onOnlineJoin,
                     onDisconnect = onOnlineDisconnect,
+                    onCommence = onCommence,
                     scrollState = scrollState,
                 )
             }
             else -> {
-                Text(
-                    "Tap to commence",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 15.sp,
-                )
+                LobbyButton("Commence Activity") { onCommence() }
             }
         }
     }
@@ -846,6 +869,7 @@ private fun BluetoothLobby(
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
     onRequestPermissions: () -> Unit,
+    onCommence: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1038,11 +1062,7 @@ private fun BluetoothLobby(
                         )
                     }
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Tap to commence",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 15.sp,
-                    )
+                    LobbyButton("Commence Activity") { onCommence() }
                 }
             }
         }
@@ -1057,6 +1077,7 @@ private fun OnlineLobby(
     onCreate: () -> Unit,
     onJoin: (String) -> Unit,
     onDisconnect: () -> Unit,
+    onCommence: () -> Unit = {},
     scrollState: ScrollState? = null,
 ) {
     var joinCode by remember { mutableStateOf("") }
@@ -1290,11 +1311,7 @@ private fun OnlineLobby(
                     )
                 }
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    "Tap to commence",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 15.sp,
-                )
+                LobbyButton("Commence Activity") { onCommence() }
             }
         }
     }
@@ -1544,6 +1561,8 @@ private fun GameOverOverlay(
     playerScore: Int,
     aiScore: Int,
     gameMode: GameMode,
+    readyForRematch: Boolean,
+    onRematch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1590,9 +1609,18 @@ private fun GameOverOverlay(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "Tap for rematch",
-            color = Color.White.copy(alpha = 0.5f),
+            text = if (readyForRematch) "Commence Rematch" else "…",
+            color = if (readyForRematch) Color.White else Color.White.copy(alpha = 0.3f),
             fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .background(
+                    if (readyForRematch) SoftPink.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.06f),
+                    RoundedCornerShape(12.dp),
+                )
+                .then(if (readyForRematch) Modifier.clickable { onRematch() } else Modifier)
+                .padding(horizontal = 20.dp, vertical = 12.dp),
         )
     }
 }
