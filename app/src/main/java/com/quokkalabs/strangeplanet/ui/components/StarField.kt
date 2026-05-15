@@ -60,6 +60,12 @@ fun StarField() {
                 Offset(w * 0.92f, h * 0.40f),
                 Offset(w * 0.15f, h * 0.55f),
                 Offset(w * 0.70f, h * 0.48f),
+                // Bottom-band stars (visible below the maze)
+                Offset(w * 0.12f, h * 0.78f),
+                Offset(w * 0.55f, h * 0.83f),
+                Offset(w * 0.82f, h * 0.75f),
+                Offset(w * 0.35f, h * 0.90f),
+                Offset(w * 0.68f, h * 0.93f),
             )
         }
 
