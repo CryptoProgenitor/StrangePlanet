@@ -61,6 +61,7 @@ import com.quokkalabs.strangeplanet.data.model.AsteroidPhase
 import com.quokkalabs.strangeplanet.data.model.RockSize
 import com.quokkalabs.strangeplanet.data.model.Ufo
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.sin
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
@@ -524,18 +525,6 @@ private fun DrawScope.drawUfo(u: Ufo, sMin: Float, t: Float) {
     // Warm glow halo.
     drawCircle(glow.copy(alpha = 0.16f), w * 0.80f, Offset(cx, cy))
     drawCircle(glow.copy(alpha = 0.09f), w * 1.08f, Offset(cx, cy))
-    // Dark separation shadow beneath the hull.
-    drawOval(
-        color = outline.copy(alpha = 0.50f),
-        topLeft = Offset(cx - w * 0.56f, cy - h * 0.30f),
-        size = Size(w * 1.12f, h * 1.7f),
-    )
-    // Lower hull.
-    drawOval(
-        color = hullDark,
-        topLeft = Offset(cx - w * 0.5f, cy - h * 0.05f),
-        size = Size(w, h * 1.15f),
-    )
     // Main disc.
     drawOval(
         color = bodyBright,
@@ -578,12 +567,12 @@ private fun DrawScope.drawUfo(u: Ufo, sMin: Float, t: Float) {
         topLeft = Offset(cx - w * 0.12f, cy - h * 0.92f),
         size = Size(w * 0.11f, h * 0.5f),
     )
-    // Pulsing rim lights.
+    // Pulsing rim lights — parametric positions along the lower arc of the disc.
     val n = 5
     for (i in 0 until n) {
-        val fx = (i - (n - 1) / 2f) / ((n - 1) / 2f)
-        val lx = cx + fx * w * 0.40f
-        val ly = cy + h * 0.16f
+        val angle = PI.toFloat() / 6f + i.toFloat() * (PI.toFloat() * 2f / 3f / (n - 1).toFloat())
+        val lx = cx + cos(angle) * w * 0.40f
+        val ly = cy + sin(angle) * h * 0.42f
         val ph = (sin(t * 2f * PI.toFloat() + i * 1.1f) * 0.5f + 0.5f)
         drawCircle(outline, r * 0.14f, Offset(lx, ly))
         drawCircle(

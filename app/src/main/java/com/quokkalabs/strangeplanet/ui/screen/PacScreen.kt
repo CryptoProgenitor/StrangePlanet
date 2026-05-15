@@ -253,7 +253,8 @@ fun PacScreen(
                             var dy = 0f
                             detectDragGestures(
                                 onDragStart = { dx = 0f; dy = 0f },
-                                onDragEnd = { dx = 0f; dy = 0f },
+                                onDragEnd = { dx = 0f; dy = 0f; viewModel.haltBeing() },
+                                onDragCancel = { dx = 0f; dy = 0f; viewModel.haltBeing() },
                             ) { change, drag ->
                                 change.consume()
                                 dx += drag.x

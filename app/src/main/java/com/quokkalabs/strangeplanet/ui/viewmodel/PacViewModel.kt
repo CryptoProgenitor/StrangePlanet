@@ -257,6 +257,16 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         if (_state.value.phase == PacPhase.READY) onTapToStart()
     }
 
+    /** Finger lifted in swipe mode — halt the being immediately. */
+    fun haltBeing() {
+        pendingDir = null
+        if (_state.value.mode == PacMode.BT_CLIENT) {
+            onClientSeekerDir(PacDir.NONE)
+        } else {
+            _state.update { s -> s.copy(being = s.being.copy(dir = PacDir.NONE)) }
+        }
+    }
+
     fun onTapToStart() {
         val e = engine ?: return
         // A contest is driven entirely from the lobby / back button.
