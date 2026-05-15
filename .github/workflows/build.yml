@@ -30,9 +30,11 @@ jobs:
 
       - name: Install Android SDK platform 36
         run: |
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --update 2>&1 | tail -3
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses 2>&1 | tail -3
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-36" \
-            "build-tools;35.0.0" 2>&1 | grep -v "^[[:space:]]*$" | tail -5
+            "build-tools;36.0.0" 2>&1 | grep -v "^[[:space:]]*$" | tail -5
 
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
