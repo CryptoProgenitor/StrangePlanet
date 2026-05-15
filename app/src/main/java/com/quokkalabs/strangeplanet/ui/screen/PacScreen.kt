@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.ToneGenerator
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
@@ -73,6 +75,7 @@ import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.viewmodel.PacViewModel
 import kotlin.math.abs
+import kotlin.math.sin
 
 @Composable
 fun PacScreen(
@@ -124,14 +127,16 @@ fun PacScreen(
 
     var showSettings by remember { mutableStateOf(false) }
 
-    val pulse by rememberInfiniteTransition(label = "sockPulse").animateFloat(
+    // Linear clock (radians) — each sock derives its own phase offset so the
+    // halos pulse out of sync with one another.
+    val pulseClock by rememberInfiniteTransition(label = "sockPulse").animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
+        targetValue = (2.0 * Math.PI).toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(900),
-            repeatMode = RepeatMode.Reverse,
+            animation = tween(1800, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "sockPulseValue",
+        label = "sockPulseClock",
     )
 
     // Tone-based SFX (gated by the sound setting).
@@ -247,6 +252,7 @@ fun PacScreen(
                         val r = k / state.cols
                         val cx = state.originX + (c + 0.5f) * ts
                         val cy = state.originY + (r + 0.5f) * ts
+                        val pulse = (sin(pulseClock + k * 1.7f) + 1f) / 2f
                         drawCircle(
                             color = AlienPink.copy(alpha = 0.18f + 0.30f * pulse),
                             radius = ts * (0.45f + 0.30f * pulse),
@@ -501,12 +507,21 @@ private fun ToggleRow(label: String, on: Boolean, onToggle: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+        Text(
+            label,
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 14.sp,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(12.dp))
         Text(
             if (on) "ENABLED" else "DISABLED",
             color = if (on) AlienPink else Color.White.copy(alpha = 0.35f),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }

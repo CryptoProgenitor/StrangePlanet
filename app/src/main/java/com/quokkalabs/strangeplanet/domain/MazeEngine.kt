@@ -32,6 +32,10 @@ class MazeEngine(
         // Logical fraction of one tile travelled per 16ms tick at level 1.
         private const val BASE_SPEED = 0.085f
 
+        // Ticks a regenerated seeker dwells in the pen before re-entering
+        // the maze (≈1.4 s at 16ms/tick).
+        private const val PEN_DWELL_TICKS = 90
+
         // Hand-authored, vertically/horizontally near-symmetric mobile maze.
         // Socks ('o') sit near the four corners.
         private val AUTHORED = listOf(
@@ -216,6 +220,12 @@ class MazeEngine(
         newFrightenedTick: Int,
         level: Int,
     ): SeekerEntity {
+        // Regenerated seeker dwelling in the pen: frozen, body shown, no
+        // collision (handled by caller), counting down to re-entry.
+        if (s.penTimer > 0) {
+            return s.copy(penTimer = s.penTimer - 1, progress = 0f, dir = PacDir.NONE)
+        }
+
         // Resolve effective mode.
         var effectiveMode = when {
             s.mode == SeekerMode.EATEN -> SeekerMode.EATEN
@@ -253,9 +263,17 @@ class MazeEngine(
             row += dir.dr
             progress -= 1f
 
-            // An EATEN seeker that reaches the pen revives to the global mode.
+            // EATEN eyes that reach the home tile: body instantly restored,
+            // then the seeker dwells in the pen before re-entering the maze.
             if (effectiveMode == SeekerMode.EATEN && col == penCol && row == penRow) {
-                effectiveMode = globalMode(newWaveTick)
+                return s.copy(
+                    col = col,
+                    row = row,
+                    dir = PacDir.NONE,
+                    progress = 0f,
+                    mode = globalMode(newWaveTick),
+                    penTimer = PEN_DWELL_TICKS,
+                )
             }
 
             val midS = s.copy(col = col, row = row, dir = dir, mode = effectiveMode)
@@ -425,7 +443,9 @@ class MazeEngine(
 
         // On a fresh sock, flip every active seeker to FRIGHTENED + reverse.
         val seedSeekers = if (sockEaten) state.seekers.map { s ->
-            if (s.mode == SeekerMode.SCATTER || s.mode == SeekerMode.CHASE)
+            if ((s.mode == SeekerMode.SCATTER || s.mode == SeekerMode.CHASE) &&
+                s.penTimer == 0
+            )
                 s.copy(mode = SeekerMode.FRIGHTENED, dir = s.dir.opposite())
             else s
         } else state.seekers
@@ -444,7 +464,7 @@ class MazeEngine(
         // Collision resolution against the being's new tile.
         var caught = false
         movedSeekers = movedSeekers.map { s ->
-            if (s.col == col && s.row == row) {
+            if (s.col == col && s.row == row && s.penTimer == 0) {
                 when (s.mode) {
                     SeekerMode.FRIGHTENED -> {
                         score += 200 * (1 shl combo.coerceAtMost(3))

@@ -23,8 +23,8 @@ enum class PacDir(val dc: Int, val dr: Int) {
 enum class PacAvatar(val label: String) {
     BEING("The Being"),
     HOUND("The Hound"),
-    FELINE("The Feline"),
-    ROLLSUCK("The Cleaning Disc"),
+    FELINE("The Vibrating Creature"),
+    ROLLSUCK("Rollsuck Supreme"),
     UNICORN("The Mythic Equine"),
 }
 
@@ -44,6 +44,9 @@ data class SeekerEntity(
     val progress: Float = 0f,
     val dir: PacDir = PacDir.LEFT,
     val mode: SeekerMode = SeekerMode.SCATTER,
+    // While > 0 the (regenerated) seeker dwells in the pen, frozen, before
+    // re-entering the maze. Set when EATEN eyes reach the home tile.
+    val penTimer: Int = 0,
 )
 
 data class PacSettings(
