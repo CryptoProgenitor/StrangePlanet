@@ -154,12 +154,20 @@ fun PacScreen(
                 val ts = state.tileSize
 
                 Canvas(modifier = Modifier.fillMaxSize()) {
+                    // Maze floor — cuts the cosmic background through so the
+                    // grid reads as a discrete playfield.
+                    drawRect(
+                        color = DeepNavy.copy(alpha = 0.45f),
+                        topLeft = Offset(state.originX, state.originY),
+                        size = Size(state.cols * ts, state.rows * ts),
+                    )
+
                     // Maze walls
                     state.walls.forEach { k ->
                         val c = k % state.cols
                         val r = k / state.cols
                         drawRoundRect(
-                            color = CosmicBlue.copy(alpha = 0.55f),
+                            color = CosmicBlue.copy(alpha = 0.70f),
                             topLeft = Offset(
                                 state.originX + c * ts,
                                 state.originY + r * ts,
@@ -204,6 +212,11 @@ fun PacScreen(
                     val by = state.originY +
                         (b.row + b.dir.dr * b.progress + 0.5f) * ts
                     val bSz = (ts * 1.5f).toInt()
+                    // Halo glow — concentric soft rings make the being pop
+                    // against the busy background.
+                    drawCircle(AlienPink.copy(alpha = 0.18f), ts * 1.05f, Offset(bx, by))
+                    drawCircle(AlienPink.copy(alpha = 0.10f), ts * 0.78f, Offset(bx, by))
+                    drawCircle(AlienPink.copy(alpha = 0.06f), ts * 0.52f, Offset(bx, by))
                     drawImage(
                         image = avatarBitmap,
                         dstOffset = IntOffset(
@@ -218,8 +231,13 @@ fun PacScreen(
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 20.dp, start = 64.dp, end = 64.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(top = 20.dp)
+                        .background(
+                            DeepNavy.copy(alpha = 0.75f),
+                            RoundedCornerShape(14.dp),
+                        )
+                        .padding(horizontal = 22.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(28.dp),
                 ) {
                     HudStat("SUSTENANCE", state.score.toString())
                     HudStat("DESIGNATION", "TIER ${state.level}")
