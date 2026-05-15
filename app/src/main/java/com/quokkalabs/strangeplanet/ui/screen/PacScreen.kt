@@ -698,6 +698,7 @@ private fun PacJoypad(
     onJoystick: (PacDir, Float) -> Unit,
 ) {
     val density = LocalDensity.current
+    val view = LocalView.current
     val baseRadiusDp = 56.dp
     val thumbRadiusDp = 22.dp
     val deadZone = 0.15f
@@ -711,14 +712,26 @@ private fun PacJoypad(
             .background(DeepNavy.copy(alpha = 0.55f))
             .pointerInput(Unit) {
                 val baseR = with(density) { baseRadiusDp.toPx() }
+                // Pulse once when the being comes to rest, not every frame.
+                var wasMoving = false
+                fun haltHaptic() {
+                    if (wasMoving) {
+                        view.performHapticFeedback(
+                            android.view.HapticFeedbackConstants.CLOCK_TICK,
+                        )
+                    }
+                    wasMoving = false
+                }
                 detectDragGestures(
                     onDragStart = { thumbOffset = Offset.Zero },
                     onDragEnd = {
                         thumbOffset = Offset.Zero
+                        haltHaptic()
                         onJoystick(PacDir.NONE, 0f)
                     },
                     onDragCancel = {
                         thumbOffset = Offset.Zero
+                        haltHaptic()
                         onJoystick(PacDir.NONE, 0f)
                     },
                 ) { change, drag ->
@@ -729,8 +742,10 @@ private fun PacJoypad(
 
                     val magnitude = hypot(thumbOffset.x, thumbOffset.y) / baseR
                     if (magnitude < deadZone) {
+                        haltHaptic()
                         onJoystick(PacDir.NONE, 0f)
                     } else {
+                        wasMoving = true
                         val dir = if (abs(thumbOffset.x) > abs(thumbOffset.y)) {
                             if (thumbOffset.x > 0) PacDir.RIGHT else PacDir.LEFT
                         } else {
