@@ -263,6 +263,10 @@ fun AsteroidScreen(
                     "Debris ${state.score} · Record ${state.highScore}\n" +
                         "Tap to attempt the activity again.",
                 )
+                AsteroidPhase.PAUSED -> CenterBanner(
+                    "ACTIVITY SUSPENDED",
+                    "Tap to resume.",
+                )
                 else -> {}
             }
 
@@ -278,6 +282,22 @@ fun AsteroidScreen(
                 contentColor = AlienPink,
             ) {
                 Text("←", fontSize = 22.sp)
+            }
+
+            // Pause button (during gameplay).
+            if (state.phase == AsteroidPhase.PLAYING) {
+                FloatingActionButton(
+                    onClick = { viewModel.pauseGame() },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(top = 20.dp, start = 66.dp)
+                        .size(44.dp),
+                    shape = CircleShape,
+                    containerColor = DeepNavy.copy(alpha = 0.75f),
+                    contentColor = AlienPink,
+                ) {
+                    Text("⏸", fontSize = 18.sp)
+                }
             }
 
             // Control bar. Default order: ◀ ▲ ✦ ● ▶.
@@ -317,7 +337,10 @@ fun AsteroidScreen(
 
             // Settings button.
             FloatingActionButton(
-                onClick = { showSettings = true },
+                onClick = {
+                    showSettings = true
+                    viewModel.pauseGame()
+                },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 20.dp, end = 14.dp)
@@ -335,7 +358,10 @@ fun AsteroidScreen(
                     altLayout = settings.altLayout,
                     onSound = viewModel::setSoundEnabled,
                     onAltLayout = viewModel::setAltLayout,
-                    onClose = { showSettings = false },
+                    onClose = {
+                        showSettings = false
+                        viewModel.resumeGame()
+                    },
                 )
             }
         }

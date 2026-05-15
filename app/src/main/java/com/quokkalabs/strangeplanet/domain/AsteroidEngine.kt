@@ -139,6 +139,16 @@ class AsteroidEngine(
     fun respawnShip(state: AsteroidGameState): AsteroidGameState =
         state.copy(ship = centredShip(), phase = AsteroidPhase.PLAYING)
 
+    fun pauseGame(state: AsteroidGameState): AsteroidGameState =
+        if (state.phase == AsteroidPhase.PLAYING)
+            state.copy(phase = AsteroidPhase.PAUSED)
+        else state
+
+    fun resumeGame(state: AsteroidGameState): AsteroidGameState =
+        if (state.phase == AsteroidPhase.PAUSED)
+            state.copy(phase = AsteroidPhase.PLAYING)
+        else state
+
     private fun explosion(
         x: Float,
         y: Float,

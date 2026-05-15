@@ -96,8 +96,20 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
                     e.createInitialState(highScore = highScore)
                 _state.value = e.startGame(_state.value)
             }
+            AsteroidPhase.PAUSED -> _state.value = e.resumeGame(_state.value)
             else -> {}
         }
+    }
+
+    fun pauseGame() {
+        val e = engine ?: return
+        input = AsteroidInput()
+        _state.value = e.pauseGame(_state.value)
+    }
+
+    fun resumeGame() {
+        val e = engine ?: return
+        _state.value = e.resumeGame(_state.value)
     }
 
     fun resetGame() {

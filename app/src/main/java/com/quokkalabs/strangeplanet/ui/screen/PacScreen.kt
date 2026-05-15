@@ -1,8 +1,13 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -54,6 +59,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -182,8 +188,16 @@ fun PacScreen(
                             detectTapGestures(onTap = { viewModel.onTapToStart() })
                         },
                 )
+                val zoneHeight = if (state.tileSize > 0f) {
+                    val mazeBottomPx = state.originY + state.rows * state.tileSize
+                    with(density) { (screenHeight - mazeBottomPx).toDp() }
+                        .coerceAtLeast(120.dp)
+                } else {
+                    160.dp
+                }
                 PacJoypad(
                     modifier = Modifier.align(Alignment.BottomCenter),
+                    zoneHeight = zoneHeight,
                     onJoystick = viewModel::onJoystick,
                 )
             } else {
@@ -695,30 +709,51 @@ private fun BoxScope.CenterBanner(
 @Composable
 private fun PacJoypad(
     modifier: Modifier = Modifier,
+    zoneHeight: Dp,
     onJoystick: (PacDir, Float) -> Unit,
 ) {
     val density = LocalDensity.current
     val view = LocalView.current
-    val baseRadiusDp = 56.dp
-    val thumbRadiusDp = 22.dp
+    // The control ring scales to fill the area below the maze.
+    val baseRadiusDp = (zoneHeight * 0.40f).coerceIn(56.dp, 150.dp)
+    val thumbRadiusDp = baseRadiusDp * 0.42f
     val deadZone = 0.15f
+
+    val vibrator = remember {
+        val ctx = view.context
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE)
+                as VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            ctx.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+    }
 
     var thumbOffset by remember { mutableStateOf(Offset.Zero) }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(140.dp)
+            .height(zoneHeight)
             .background(DeepNavy.copy(alpha = 0.55f))
-            .pointerInput(Unit) {
+            .pointerInput(zoneHeight) {
                 val baseR = with(density) { baseRadiusDp.toPx() }
                 // Pulse once when the being comes to rest, not every frame.
                 var wasMoving = false
                 fun haltHaptic() {
                     if (wasMoving) {
-                        view.performHapticFeedback(
-                            android.view.HapticFeedbackConstants.CLOCK_TICK,
-                        )
+                        val effect =
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                                VibrationEffect.createPredefined(
+                                    VibrationEffect.EFFECT_HEAVY_CLICK,
+                                )
+                            else
+                                VibrationEffect.createOneShot(
+                                    45L,
+                                    VibrationEffect.DEFAULT_AMPLITUDE,
+                                )
+                        runCatching { vibrator.vibrate(effect) }
                     }
                     wasMoving = false
                 }

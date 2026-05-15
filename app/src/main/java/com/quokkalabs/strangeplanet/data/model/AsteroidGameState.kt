@@ -1,7 +1,7 @@
 package com.quokkalabs.strangeplanet.data.model
 
 enum class AsteroidPhase {
-    READY, PLAYING, DYING, LEVEL_CLEARED, GAME_OVER
+    READY, PLAYING, DYING, LEVEL_CLEARED, GAME_OVER, PAUSED
 }
 
 enum class RockSize { LARGE, MEDIUM, SMALL }
