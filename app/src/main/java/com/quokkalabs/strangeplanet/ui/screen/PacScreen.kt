@@ -176,6 +176,11 @@ fun PacScreen(
 
     BackHandler { attemptBack() }
 
+    DisposableEffect(Unit) { onDispose { viewModel.stopLoop() } }
+    LaunchedEffect(showExit, showResume) {
+        viewModel.setPaused(showExit || showResume)
+    }
+
     val avatarBitmap = remember(settings.avatar) {
         val resId = when (settings.avatar) {
             PacAvatar.BEING -> R.drawable.sp_alien_dad

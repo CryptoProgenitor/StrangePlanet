@@ -1,6 +1,7 @@
 package com.quokkalabs.strangeplanet.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.data.model.AsteroidGameState
@@ -8,6 +9,7 @@ import com.quokkalabs.strangeplanet.data.model.AsteroidInput
 import com.quokkalabs.strangeplanet.data.model.AsteroidPhase
 import com.quokkalabs.strangeplanet.data.model.AsteroidSettings
 import com.quokkalabs.strangeplanet.domain.AsteroidEngine
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +23,8 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
         application.getSharedPreferences("asteroid_prefs", Application.MODE_PRIVATE)
 
     private var engine: AsteroidEngine? = null
+    private var loopJob: Job? = null
+    @Volatile private var paused = false
     private var highScore: Int = prefs.getInt(KEY_HIGH_SCORE, 0)
 
     private val _state = MutableStateFlow(AsteroidGameState(highScore = highScore))
@@ -44,42 +48,70 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * Re-entrant: the ViewModel is Activity-scoped and outlives the screen,
+     * so this (re)starts the loop and, when a snapshot exists, presents a
+     * clean READY board so the resume prompt can appear.
+     */
     fun initGame(screenWidth: Float, screenHeight: Float) {
-        if (engine != null) return
-        val eng = AsteroidEngine(screenWidth, screenHeight)
-        engine = eng
-        _state.value = eng.createInitialState(highScore = highScore)
+        val firstInit = engine == null
+        val eng = engine ?: AsteroidEngine(screenWidth, screenHeight).also { engine = it }
 
-        viewModelScope.launch {
+        if (firstInit || hasSavedSession()) {
+            _state.value = eng.createInitialState(highScore = highScore)
+        }
+        startLoop()
+    }
+
+    private fun startLoop() {
+        if (loopJob?.isActive == true) return
+        loopJob = viewModelScope.launch {
             while (isActive) {
                 delay(16)
                 val e = engine ?: continue
-                _state.value = e.update(_state.value, input)
+                if (paused) continue
+                try {
+                    _state.value = e.update(_state.value, input)
 
-                when (_state.value.phase) {
-                    AsteroidPhase.LEVEL_CLEARED -> {
-                        delay(1800)
-                        val st = _state.value
-                        _state.value = e.createInitialState(
-                            level = st.level + 1,
-                            score = st.score,
-                            lives = st.lives,
-                            highScore = highScore,
-                            extraLifeAwarded = st.extraLifeAwarded,
-                        ).copy(phase = AsteroidPhase.PLAYING)
+                    when (_state.value.phase) {
+                        AsteroidPhase.LEVEL_CLEARED -> {
+                            delay(1800)
+                            val st = _state.value
+                            _state.value = e.createInitialState(
+                                level = st.level + 1,
+                                score = st.score,
+                                lives = st.lives,
+                                highScore = highScore,
+                                extraLifeAwarded = st.extraLifeAwarded,
+                            ).copy(phase = AsteroidPhase.PLAYING)
+                        }
+                        AsteroidPhase.DYING -> {
+                            delay(1600)
+                            _state.value = e.respawnShip(_state.value)
+                        }
+                        AsteroidPhase.GAME_OVER -> {
+                            commitHighScore(_state.value.score)
+                            _state.value = _state.value.copy(highScore = highScore)
+                        }
+                        else -> {}
                     }
-                    AsteroidPhase.DYING -> {
-                        delay(1600)
-                        _state.value = e.respawnShip(_state.value)
-                    }
-                    AsteroidPhase.GAME_OVER -> {
-                        commitHighScore(_state.value.score)
-                        _state.value = _state.value.copy(highScore = highScore)
-                    }
-                    else -> {}
+                } catch (t: Throwable) {
+                    // A single bad frame must never permanently kill physics.
+                    Log.e("AsteroidViewModel", "frame failed", t)
                 }
             }
         }
+    }
+
+    /** Stop simulating when the screen leaves so the board can't run on. */
+    fun stopLoop() {
+        loopJob?.cancel()
+        loopJob = null
+    }
+
+    /** Freeze physics while a modal (exit / resume prompt) is showing. */
+    fun setPaused(value: Boolean) {
+        paused = value
     }
 
     fun setInput(transform: (AsteroidInput) -> AsteroidInput) {

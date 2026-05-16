@@ -186,6 +186,11 @@ fun AsteroidScreen(
 
     BackHandler { attemptBack() }
 
+    DisposableEffect(Unit) { onDispose { viewModel.stopLoop() } }
+    androidx.compose.runtime.LaunchedEffect(showExit, showResume) {
+        viewModel.setPaused(showExit || showResume)
+    }
+
     val shipBitmap = remember {
         BitmapFactory.decodeResource(context.resources, R.drawable.sp_rollsuck)
             .asImageBitmap()

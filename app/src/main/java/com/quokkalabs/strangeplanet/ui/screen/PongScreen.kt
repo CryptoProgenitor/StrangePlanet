@@ -132,6 +132,8 @@ fun PongScreen(
         }
     }
 
+    DisposableEffect(Unit) { onDispose { viewModel.stopLoop() } }
+
     // Screen off / app backgrounded → suspend an in-progress contest.
     PauseOnBackground {
         if (state.phase == GamePhase.PLAYING) viewModel.requestPause()

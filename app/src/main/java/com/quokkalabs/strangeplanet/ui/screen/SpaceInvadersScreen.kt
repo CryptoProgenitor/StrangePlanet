@@ -101,6 +101,11 @@ fun SpaceInvadersScreen(
 
     BackHandler { attemptBack() }
 
+    DisposableEffect(Unit) { onDispose { viewModel.stopLoop() } }
+    LaunchedEffect(showExit, showResume) {
+        viewModel.setPaused(showExit || showResume)
+    }
+
     // Screen off / app backgrounded → suspend play.
     PauseOnBackground { viewModel.pauseGame() }
 

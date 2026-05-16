@@ -24,6 +24,7 @@ import com.quokkalabs.strangeplanet.domain.PongEngine
 import android.util.Log
 import com.quokkalabs.strangeplanet.firebase.FirebasePongManager
 import com.quokkalabs.strangeplanet.webrtc.WebRtcPongManager
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +42,8 @@ import com.quokkalabs.strangeplanet.debug.PongDebugMetrics
 class PongViewModel(application: Application) : AndroidViewModel(application) {
 
     private var engine: PongEngine? = null
+    private var loopJob: Job? = null
+    private var tickerJob: Job? = null
     private val _gameState = MutableStateFlow(PongGameState())
     val gameState: StateFlow<PongGameState> = _gameState.asStateFlow()
 
@@ -110,27 +113,42 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         2.00f,   // phase 7: full miss       — paddle at opposite wall
     )
 
+    /**
+     * Re-entrant: the ViewModel is Activity-scoped and outlives the screen,
+     * so this creates the engine once and (re)starts the loops. Pong is
+     * networked and intentionally has no progress preservation.
+     */
     fun initGame(screenWidth: Float, screenHeight: Float) {
-        if (engine != null) return
+        val firstInit = engine == null
+        if (firstInit) {
+            val eng = PongEngine(screenWidth, screenHeight, _pongSettings.value.difficulty)
+            engine = eng
+            _gameState.value = eng.createInitialState()
+        }
+        startLoops()
+    }
 
-        val eng = PongEngine(screenWidth, screenHeight, _pongSettings.value.difficulty)
-        engine = eng
-        _gameState.value = eng.createInitialState()
-
-        viewModelScope.launch {
-            while (isActive) {
-                delay(1000)
-                if (_gameState.value.gameMode == GameMode.ONLINE) {
-                    PongDebugMetrics.tickSecond()
-                    if (_pongSettings.value.debugOverlayEnabled) PongDebugMetrics.emitLogcat()
+    private fun startLoops() {
+        if (tickerJob?.isActive != true) {
+            tickerJob = viewModelScope.launch {
+                while (isActive) {
+                    delay(1000)
+                    if (_gameState.value.gameMode == GameMode.ONLINE) {
+                        PongDebugMetrics.tickSecond()
+                        if (_pongSettings.value.debugOverlayEnabled) {
+                            PongDebugMetrics.emitLogcat()
+                        }
+                    }
                 }
             }
         }
 
-        viewModelScope.launch {
+        if (loopJob?.isActive == true) return
+        loopJob = viewModelScope.launch {
             while (isActive) {
                 delay(16)
                 val e = engine ?: continue
+                try {
 
                 // Determine active multiplayer manager
                 val mode = _gameState.value.gameMode
@@ -383,8 +401,21 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+                } catch (t: Throwable) {
+                    // A single bad frame (e.g. transient networking) must
+                    // never permanently kill the contest loop.
+                    Log.e("PongViewModel", "frame failed", t)
+                }
             }
         }
+    }
+
+    /** Stop the loops when the screen leaves so play can't run on. */
+    fun stopLoop() {
+        loopJob?.cancel()
+        loopJob = null
+        tickerJob?.cancel()
+        tickerJob = null
     }
 
     /**

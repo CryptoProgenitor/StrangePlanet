@@ -17,6 +17,8 @@ import com.quokkalabs.strangeplanet.data.model.SeekerEntity
 import com.quokkalabs.strangeplanet.data.model.SeekerMode
 import com.quokkalabs.strangeplanet.data.model.SeekerType
 import com.quokkalabs.strangeplanet.domain.MazeEngine
+import android.util.Log
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +32,8 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("pac_prefs", Application.MODE_PRIVATE)
 
     private var engine: MazeEngine? = null
+    private var loopJob: Job? = null
+    @Volatile private var paused = false
 
     private var highScore: Int = prefs.getInt(KEY_HIGH_SCORE, 0)
 
@@ -93,18 +97,31 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Re-entrant: the ViewModel is Activity-scoped and outlives the screen,
+     * so this (re)starts the loop and, when a SOLO snapshot exists, presents
+     * a clean READY board so the resume prompt can appear.
+     */
     fun initGame(screenWidth: Float, screenHeight: Float) {
-        if (engine != null) return
+        val firstInit = engine == null
         screenW = screenWidth
         screenH = screenHeight
-        val eng = MazeEngine(screenWidth, screenHeight)
-        engine = eng
-        _state.value = eng.createInitialState(highScore = highScore)
+        val eng = engine ?: MazeEngine(screenWidth, screenHeight).also { engine = it }
 
-        viewModelScope.launch {
+        if (firstInit || hasSavedSession()) {
+            _state.value = eng.createInitialState(highScore = highScore)
+        }
+        startLoop()
+    }
+
+    private fun startLoop() {
+        if (loopJob?.isActive == true) return
+        loopJob = viewModelScope.launch {
             while (isActive) {
                 delay(16)
                 val e = engine ?: continue
+                if (paused) continue
+                try {
                 when (_state.value.mode) {
                     PacMode.BT_CLIENT -> {
                         // Client renders host snapshots only — no local sim.
@@ -146,8 +163,23 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
                         handleSoloPhase(e)
                     }
                 }
+                } catch (t: Throwable) {
+                    // A single bad frame must never permanently kill the loop.
+                    Log.e("PacViewModel", "frame failed", t)
+                }
             }
         }
+    }
+
+    /** Stop simulating when the screen leaves so the maze can't run on. */
+    fun stopLoop() {
+        loopJob?.cancel()
+        loopJob = null
+    }
+
+    /** Freeze the loop while a modal (exit / resume prompt) is showing. */
+    fun setPaused(value: Boolean) {
+        paused = value
     }
 
     private suspend fun handleSoloPhase(e: MazeEngine) {

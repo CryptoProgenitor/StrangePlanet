@@ -34,6 +34,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,6 +102,8 @@ fun StrangeMatchScreen(
     }
 
     BackHandler { attemptBack() }
+
+    LaunchedEffect(Unit) { viewModel.onEnterScreen() }
 
     // Load all 7 tile bitmaps once at screen level
     val bitmaps = remember {

@@ -1,6 +1,7 @@
 package com.quokkalabs.strangeplanet.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.data.model.*
@@ -38,6 +39,37 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = StrangeMatchState(highScore = prefs.getInt("high_score", 0))
     }
 
+    /**
+     * The ViewModel is Activity-scoped, so a preserved game stays live in
+     * memory. On screen (re)entry, drop back to a READY board when a
+     * snapshot exists so the resume prompt can appear instead of the stale
+     * in-progress board (which would otherwise orphan the snapshot).
+     */
+    fun onEnterScreen() {
+        if (hasSavedSession() && _state.value.phase != StrangeMatchPhase.READY) {
+            _state.value = StrangeMatchState(highScore = prefs.getInt("high_score", 0))
+        }
+    }
+
+    /** Run a swap so a thrown step can't strand the board in ANIMATING. */
+    private fun launchSwap(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (t: Throwable) {
+                Log.e("StrangeMatchViewModel", "swap failed", t)
+                _state.update {
+                    it.copy(
+                        phase = StrangeMatchPhase.PLAYING,
+                        matchedCells = emptySet(),
+                        bombExplosionCells = emptySet(),
+                        selectedCell = null,
+                    )
+                }
+            }
+        }
+    }
+
     fun onCellTapped(row: Int, col: Int) {
         val s = _state.value
         if (s.phase != StrangeMatchPhase.PLAYING) return
@@ -51,7 +83,7 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(selectedCell = tapped) }
             else -> {
                 _state.update { it.copy(selectedCell = null, phase = StrangeMatchPhase.ANIMATING) }
-                viewModelScope.launch { doSwap(selected, tapped) }
+                launchSwap { doSwap(selected, tapped) }
             }
         }
     }
@@ -64,7 +96,7 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
         val to = toRow to toCol
         if (!StrangeMatchEngine.isAdjacent(from, to)) return
         _state.update { it.copy(selectedCell = null, phase = StrangeMatchPhase.ANIMATING) }
-        viewModelScope.launch { doSwap(from, to) }
+        launchSwap { doSwap(from, to) }
     }
 
     private suspend fun doSwap(a: Pair<Int, Int>, b: Pair<Int, Int>) {
@@ -190,7 +222,7 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun resumeSession() {
         val raw = prefs.getString(KEY_SESSION, null) ?: return
-        runCatching {
+        val restored = runCatching {
             val root = JSONObject(raw)
             val rows = root.getJSONArray("grid")
             val grid = ArrayList<List<Tile?>>()
@@ -221,8 +253,9 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
                 level = root.getInt("level"),
                 phase = StrangeMatchPhase.PLAYING,
             )
-        }
-        discardSavedSession()
+        }.isSuccess
+        // Only drop the snapshot if it actually restored.
+        if (restored) discardSavedSession()
     }
 
     fun discardSavedSession() {

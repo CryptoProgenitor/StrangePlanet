@@ -1,6 +1,7 @@
 package com.quokkalabs.strangeplanet.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.audio.SpaceInvadersSoundManager
@@ -9,6 +10,7 @@ import com.quokkalabs.strangeplanet.data.model.SIPhase
 import com.quokkalabs.strangeplanet.data.model.SISettings
 import com.quokkalabs.strangeplanet.data.model.SpaceInvadersState
 import com.quokkalabs.strangeplanet.domain.SpaceInvadersEngine
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,8 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
         application.getSharedPreferences("si_prefs", Application.MODE_PRIVATE)
 
     private var engine: SpaceInvadersEngine? = null
+    private var loopJob: Job? = null
+    @Volatile private var paused = false
     private val _state = MutableStateFlow(SpaceInvadersState())
     val state: StateFlow<SpaceInvadersState> = _state.asStateFlow()
 
@@ -43,18 +47,33 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
     private var screenW = 0f
     private var screenH = 0f
 
+    /**
+     * Re-entrant: the ViewModel is Activity-scoped and outlives the screen,
+     * so this (re)starts the loop and, when a snapshot exists, presents a
+     * clean READY board so the resume prompt can appear.
+     */
     fun initGame(screenWidth: Float, screenHeight: Float) {
-        if (engine != null) return
+        val firstInit = engine == null
         screenW = screenWidth
         screenH = screenHeight
-        val eng = SpaceInvadersEngine(screenWidth, screenHeight, _siSettings.value.difficulty)
-        engine = eng
-        _state.value = eng.createInitialState()
+        val eng = engine
+            ?: SpaceInvadersEngine(screenWidth, screenHeight, _siSettings.value.difficulty)
+                .also { engine = it }
 
-        viewModelScope.launch {
+        if (firstInit || hasSavedSession()) {
+            _state.value = eng.createInitialState()
+        }
+        startLoop()
+    }
+
+    private fun startLoop() {
+        if (loopJob?.isActive == true) return
+        loopJob = viewModelScope.launch {
             while (isActive) {
                 delay(16)
                 val e = engine ?: continue
+                if (paused) continue
+                try {
                 val touchX = if (isTouching) playerTouchX else null
                 val before = _state.value
                 _state.update { e.update(it, touchX) }
@@ -100,8 +119,23 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
                         lives = s.lives,
                     ).copy(phase = SIPhase.PLAYING)
                 }
+                } catch (t: Throwable) {
+                    // A single bad frame must never permanently kill the loop.
+                    Log.e("SpaceInvadersViewModel", "frame failed", t)
+                }
             }
         }
+    }
+
+    /** Stop simulating when the screen leaves so the board can't run on. */
+    fun stopLoop() {
+        loopJob?.cancel()
+        loopJob = null
+    }
+
+    /** Freeze the loop while a modal (exit / resume prompt) is showing. */
+    fun setPaused(value: Boolean) {
+        paused = value
     }
 
     fun onTouch(x: Float) {
