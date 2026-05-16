@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -38,6 +39,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -333,4 +337,41 @@ private fun tileColor(type: TileType) = when (type) {
     TileType.ALIEN_DAD -> Color(0xFF2255AA)
     TileType.CAT -> Color(0xFF2E7D4F)
     TileType.SOCKS -> Color(0xFFB8740A)
+}
+
+@Composable
+private fun DisposableEdgeToEdge(view: android.view.View) {
+    DisposableEffect(Unit) {
+        val window = (view.context as? android.app.Activity)?.window
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        onDispose {
+            if (window != null) {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+}
+
+@Composable
+private fun HudStat(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            label,
+            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            value,
+            color = AlienPink,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
 }
