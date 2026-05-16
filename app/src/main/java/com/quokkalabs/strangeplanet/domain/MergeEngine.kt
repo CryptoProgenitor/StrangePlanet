@@ -172,9 +172,14 @@ class MergeEngine(
                 val ra = radiusOf(a.tier)
                 val rb = radiusOf(b.tier)
                 val d = hypot(b.x - a.x, b.y - a.y)
-                // The collision solver separates same-tier orbs to exactly
-                // (ra + rb); treat anything at/within contact as a merge.
-                if (d < (ra + rb) * 1.06f) {
+                // The collision solver settles same-tier orbs near (ra + rb),
+                // but neighbours in a crowded cluster can wedge a pair a few
+                // pixels farther apart. A purely relative tolerance gives tiny
+                // orbs almost no slack (6% of a ~60px sum ≈ 3px), so they
+                // collide visibly yet never merge. Add a size-independent
+                // pixel floor so small orbs get the same effective slack.
+                val mergeGap = (ra + rb) * 1.06f + vesselWidth * 0.012f
+                if (d < mergeGap) {
                     merged.add(a.id)
                     merged.add(b.id)
                     val mx = (a.x + b.x) / 2f
