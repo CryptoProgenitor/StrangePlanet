@@ -36,7 +36,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -63,7 +65,9 @@ import com.quokkalabs.strangeplanet.data.model.Tile
 import com.quokkalabs.strangeplanet.data.model.TileKind
 import com.quokkalabs.strangeplanet.data.model.TileType
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
+import com.quokkalabs.strangeplanet.ui.components.ExitChoiceDialog
 import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
+import com.quokkalabs.strangeplanet.ui.components.ResumePrompt
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.viewmodel.StrangeMatchViewModel
@@ -82,10 +86,21 @@ fun StrangeMatchScreen(
 
     PauseOnBackground { /* no-op for now */ }
 
-    BackHandler {
-        viewModel.resetGame()
-        onBack()
+    var showExit by remember { mutableStateOf(false) }
+    var showResume by remember { mutableStateOf(viewModel.hasSavedSession()) }
+
+    fun attemptBack() {
+        if (state.phase == StrangeMatchPhase.PLAYING ||
+            state.phase == StrangeMatchPhase.ANIMATING
+        ) {
+            showExit = true
+        } else {
+            viewModel.resetGame()
+            onBack()
+        }
     }
+
+    BackHandler { attemptBack() }
 
     // Load all 7 tile bitmaps once at screen level
     val bitmaps = remember {
@@ -238,7 +253,7 @@ fun StrangeMatchScreen(
 
             // Back button FAB
             FloatingActionButton(
-                onClick = { viewModel.resetGame(); onBack() },
+                onClick = { attemptBack() },
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(top = 20.dp, start = 14.dp)
@@ -248,6 +263,37 @@ fun StrangeMatchScreen(
                 contentColor = AlienPink,
             ) {
                 Text("←", fontSize = 22.sp)
+            }
+
+            if (showExit) {
+                ExitChoiceDialog(
+                    canPreserve = true,
+                    onAbandon = {
+                        showExit = false
+                        viewModel.discardSavedSession()
+                        viewModel.resetGame()
+                        onBack()
+                    },
+                    onCancel = { showExit = false },
+                    onPreserve = {
+                        showExit = false
+                        viewModel.saveSession()
+                        onBack()
+                    },
+                )
+            }
+
+            if (showResume && state.phase == StrangeMatchPhase.READY) {
+                ResumePrompt(
+                    onResume = {
+                        showResume = false
+                        viewModel.resumeSession()
+                    },
+                    onFresh = {
+                        showResume = false
+                        viewModel.discardSavedSession()
+                    },
+                )
             }
         }
     }

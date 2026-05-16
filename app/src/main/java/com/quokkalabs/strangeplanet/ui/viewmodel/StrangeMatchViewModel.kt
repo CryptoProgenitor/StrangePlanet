@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.data.model.*
 import com.quokkalabs.strangeplanet.domain.StrangeMatchEngine
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -151,5 +153,83 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
             prefs.edit().putInt("high_score", score).apply()
             _state.update { it.copy(highScore = score) }
         }
+    }
+
+    // ── Session preservation ────────────────────────────────────────────────
+
+    fun hasSavedSession(): Boolean = prefs.contains(KEY_SESSION)
+
+    fun saveSession() {
+        val s = _state.value
+        if (s.phase != StrangeMatchPhase.PLAYING && s.phase != StrangeMatchPhase.ANIMATING) return
+        commitHighScore(s.score)
+        val root = JSONObject().apply {
+            put("score", s.score)
+            put("movesLeft", s.movesLeft)
+            put("scoreTarget", s.scoreTarget)
+            put("level", s.level)
+        }
+        val rows = JSONArray()
+        for (row in s.grid) {
+            val rArr = JSONArray()
+            for (cell in row) {
+                if (cell == null) {
+                    rArr.put(JSONObject.NULL)
+                } else {
+                    rArr.put(JSONObject().apply {
+                        put("t", cell.type.name)
+                        put("k", cell.kind.name)
+                    })
+                }
+            }
+            rows.put(rArr)
+        }
+        root.put("grid", rows)
+        prefs.edit().putString(KEY_SESSION, root.toString()).apply()
+    }
+
+    fun resumeSession() {
+        val raw = prefs.getString(KEY_SESSION, null) ?: return
+        runCatching {
+            val root = JSONObject(raw)
+            val rows = root.getJSONArray("grid")
+            val grid = ArrayList<List<Tile?>>()
+            for (r in 0 until rows.length()) {
+                val rArr = rows.getJSONArray(r)
+                val rowList = ArrayList<Tile?>()
+                for (c in 0 until rArr.length()) {
+                    if (rArr.isNull(c)) {
+                        rowList.add(null)
+                    } else {
+                        val o = rArr.getJSONObject(c)
+                        rowList.add(
+                            Tile(
+                                type = TileType.valueOf(o.getString("t")),
+                                kind = TileKind.valueOf(o.getString("k")),
+                            ),
+                        )
+                    }
+                }
+                grid.add(rowList)
+            }
+            _state.value = StrangeMatchState(
+                grid = grid,
+                score = root.getInt("score"),
+                highScore = prefs.getInt("high_score", 0),
+                movesLeft = root.getInt("movesLeft"),
+                scoreTarget = root.getInt("scoreTarget"),
+                level = root.getInt("level"),
+                phase = StrangeMatchPhase.PLAYING,
+            )
+        }
+        discardSavedSession()
+    }
+
+    fun discardSavedSession() {
+        prefs.edit().remove(KEY_SESSION).apply()
+    }
+
+    private companion object {
+        const val KEY_SESSION = "saved_session"
     }
 }

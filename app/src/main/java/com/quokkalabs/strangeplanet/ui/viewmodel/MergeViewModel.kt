@@ -5,7 +5,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.data.model.MergePhase
 import com.quokkalabs.strangeplanet.data.model.MergeState
+import com.quokkalabs.strangeplanet.data.model.MergeTier
+import com.quokkalabs.strangeplanet.data.model.Orb
+import com.quokkalabs.strangeplanet.data.model.nextOrbId
 import com.quokkalabs.strangeplanet.domain.MergeEngine
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -89,7 +94,75 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         _state.value = s
     }
 
+    // ── Session preservation ────────────────────────────────────────────────
+
+    fun hasSavedSession(): Boolean = prefs.contains(KEY_SESSION)
+
+    fun saveSession() {
+        val s = _state.value
+        if (s.phase != MergePhase.PLAYING) return
+        commitHighScore(s.score)
+        val root = JSONObject().apply {
+            put("score", s.score)
+            put("currentTier", s.currentTier.name)
+            put("nextTier", s.nextTier.name)
+            put("spoutX", s.spoutX.toDouble())
+        }
+        val arr = JSONArray()
+        for (o in s.orbs) {
+            arr.put(JSONObject().apply {
+                put("tier", o.tier.name)
+                put("x", o.x.toDouble())
+                put("y", o.y.toDouble())
+                put("vx", o.vx.toDouble())
+                put("vy", o.vy.toDouble())
+            })
+        }
+        root.put("orbs", arr)
+        prefs.edit().putString(KEY_SESSION, root.toString()).apply()
+    }
+
+    fun resumeSession() {
+        val e = engine ?: return
+        val raw = prefs.getString(KEY_SESSION, null) ?: return
+        runCatching {
+            val root = JSONObject(raw)
+            val base = e.createInitialState(highScore)
+            val arr = root.getJSONArray("orbs")
+            val orbs = ArrayList<Orb>()
+            for (i in 0 until arr.length()) {
+                val j = arr.getJSONObject(i)
+                orbs.add(
+                    Orb(
+                        id = nextOrbId(),
+                        tier = MergeTier.valueOf(j.getString("tier")),
+                        x = j.getDouble("x").toFloat(),
+                        y = j.getDouble("y").toFloat(),
+                        vx = j.getDouble("vx").toFloat(),
+                        vy = j.getDouble("vy").toFloat(),
+                    ),
+                )
+            }
+            spoutX = root.getDouble("spoutX").toFloat()
+            _state.value = base.copy(
+                orbs = orbs,
+                score = root.getInt("score"),
+                currentTier = MergeTier.valueOf(root.getString("currentTier")),
+                nextTier = MergeTier.valueOf(root.getString("nextTier")),
+                spoutX = spoutX,
+                phase = MergePhase.PLAYING,
+                canDrop = true,
+            )
+        }
+        discardSavedSession()
+    }
+
+    fun discardSavedSession() {
+        prefs.edit().remove(KEY_SESSION).apply()
+    }
+
     private companion object {
         const val KEY_HIGH_SCORE = "high_score"
+        const val KEY_SESSION = "saved_session"
     }
 }
