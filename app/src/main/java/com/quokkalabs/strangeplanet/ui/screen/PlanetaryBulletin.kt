@@ -41,6 +41,7 @@ fun PlanetaryBulletin(
     onNavigateToPacman: () -> Unit,
     onNavigateToAsteroids: () -> Unit,
     onNavigateToStrangeMatch: () -> Unit,
+    onNavigateToMerge: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -56,6 +57,9 @@ fun PlanetaryBulletin(
     }
     val strangeMatchHighScore = remember {
         context.getSharedPreferences("strange_match_prefs", 0).getInt("high_score", 0)
+    }
+    val mergeHighScore = remember {
+        context.getSharedPreferences("merge_prefs", 0).getInt("high_score", 0)
     }
     val versionName = packageInfo.versionName ?: "?"
     val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -151,6 +155,16 @@ fun PlanetaryBulletin(
                 subtitle = if (strangeMatchHighScore > 0) "Record: $strangeMatchHighScore matches"
                     else "Swap strange beings; match 3 or more",
                 onClick = onNavigateToStrangeMatch,
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            BulletinCard(
+                emoji = "🪐",
+                title = "Spherical Agglomeration",
+                subtitle = if (mergeHighScore > 0) "Record: $mergeHighScore mass accumulated"
+                    else "Coalesce spheres; form the void",
+                onClick = onNavigateToMerge,
             )
 
             Spacer(Modifier.height(10.dp))
