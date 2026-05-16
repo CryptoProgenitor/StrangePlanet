@@ -374,7 +374,7 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
             when (o.tier) {
                 MergeTier.DUST_MOTE, MergeTier.PEBBLE, MergeTier.BOULDER,
                 MergeTier.MOONLET, MergeTier.MOON -> drawCraters(o, r, base, alphaMul)
-                MergeTier.STRANGE_PLANET -> drawPlanetFeatures(o, r, base, alphaMul)
+                MergeTier.STRANGE_PLANET -> drawEarth(o, r, alphaMul)
                 MergeTier.GAS_GIANT -> drawGasGiant(o, r, base, alphaMul)
                 MergeTier.STAR -> drawStarSurface(o, r, alphaMul)
                 MergeTier.NEUTRON_STAR -> drawNeutronCore(o, r, alphaMul)
@@ -459,39 +459,80 @@ private fun DrawScope.drawGasGiant(o: Orb, r: Float, base: Color, a: Float) {
             size = Size(2f * r, bandH),
         )
     }
-    // The Great Red Spot
-    val sx = o.x + r * 0.30f
-    val sy = o.y + r * 0.22f
+    // The Great Spot — a storm churned FROM the atmosphere: same warm
+    // palette as the bands, feathered with concentric low-contrast ovals
+    // so the edges dissolve into the surrounding flow.
+    val sx = o.x + r * 0.26f
+    val sy = o.y + r * 0.24f
+    val sw = r * 0.66f
+    val sh = r * 0.40f
+    val storm = darken(base)
     drawOval(
-        color = Color(0xFFC4452F).copy(alpha = 0.85f * a),
-        topLeft = Offset(sx - r * 0.30f, sy - r * 0.20f),
-        size = Size(r * 0.60f, r * 0.40f),
+        color = storm.copy(alpha = 0.18f * a),
+        topLeft = Offset(sx - sw * 0.64f, sy - sh * 0.64f),
+        size = Size(sw * 1.28f, sh * 1.28f),
     )
     drawOval(
-        color = Color(0xFFE8884A).copy(alpha = 0.6f * a),
-        topLeft = Offset(sx - r * 0.17f, sy - r * 0.11f),
-        size = Size(r * 0.34f, r * 0.22f),
+        color = storm.copy(alpha = 0.26f * a),
+        topLeft = Offset(sx - sw * 0.5f, sy - sh * 0.5f),
+        size = Size(sw, sh),
+    )
+    drawOval(
+        color = Color(0xFFB85636).copy(alpha = 0.32f * a),
+        topLeft = Offset(sx - sw * 0.38f, sy - sh * 0.38f),
+        size = Size(sw * 0.76f, sh * 0.76f),
+    )
+    drawOval(
+        color = Color(0xFFDB9A4E).copy(alpha = 0.30f * a),
+        topLeft = Offset(sx - sw * 0.20f, sy - sh * 0.20f),
+        size = Size(sw * 0.40f, sh * 0.40f),
     )
 }
 
-private fun DrawScope.drawPlanetFeatures(o: Orb, r: Float, base: Color, a: Float) {
-    // Lighter "landmass" blobs
-    for (i in 0 until 5) {
+private fun DrawScope.drawEarth(o: Orb, r: Float, a: Float) {
+    val land = Color(0xFF4F8B43)      // vegetated continent
+    val landDry = Color(0xFFA98B53)   // arid / desert
+    val ice = Color(0xFFEAF4FA)       // polar cap
+
+    // Continents — clustered ragged landmasses over the ocean base
+    for (i in 0 until 6) {
         val ang = hash01(o.id, i + 10) * 6.2832f
         val dd = hash01(o.id, i + 60) * r * 0.68f
-        val br = r * (0.20f + hash01(o.id, i + 110) * 0.26f)
+        val cx = o.x + cos(ang) * dd
+        val cy = o.y + sin(ang) * dd
+        val br = r * (0.18f + hash01(o.id, i + 110) * 0.24f)
+        val col = if (hash01(o.id, i + 140) > 0.66f) landDry else land
+        drawCircle(col.copy(alpha = 0.88f * a), br, Offset(cx, cy))
+        // satellite blob for a less circular coastline
         drawCircle(
-            color = lighten(base).copy(alpha = 0.32f * a),
-            radius = br,
-            center = Offset(o.x + cos(ang) * dd, o.y + sin(ang) * dd),
+            col.copy(alpha = 0.78f * a),
+            br * 0.55f,
+            Offset(cx + cos(ang) * br * 0.75f, cy + sin(ang) * br * 0.75f),
         )
     }
-    // High cloud streak
+
+    // Polar ice caps at the top & bottom of the planet's axis
     drawOval(
-        color = Color.White.copy(alpha = 0.13f * a),
-        topLeft = Offset(o.x - r, o.y - r * 0.16f),
-        size = Size(2f * r, r * 0.34f),
+        color = ice.copy(alpha = 0.92f * a),
+        topLeft = Offset(o.x - r * 0.72f, o.y - r * 1.04f),
+        size = Size(r * 1.44f, r * 0.56f),
     )
+    drawOval(
+        color = ice.copy(alpha = 0.92f * a),
+        topLeft = Offset(o.x - r * 0.72f, o.y + r * 0.48f),
+        size = Size(r * 1.44f, r * 0.56f),
+    )
+
+    // High clouds — soft white swirls drifting over land & sea
+    for (i in 0 until 4) {
+        val ang = hash01(o.id, i + 30) * 6.2832f
+        val dd = hash01(o.id, i + 80) * r * 0.62f
+        drawOval(
+            color = Color.White.copy(alpha = 0.24f * a),
+            topLeft = Offset(o.x + cos(ang) * dd - r * 0.52f, o.y + sin(ang) * dd - r * 0.14f),
+            size = Size(r * 1.04f, r * 0.28f),
+        )
+    }
 }
 
 private fun DrawScope.drawStarSurface(o: Orb, r: Float, a: Float) {
@@ -570,7 +611,7 @@ private fun tierColor(t: MergeTier): Color = when (t) {
     MergeTier.BOULDER -> Color(0xFFB05A34)        // rust brown
     MergeTier.MOONLET -> Color(0xFF7FA8A0)        // pale teal-grey
     MergeTier.MOON -> Color(0xFFD7E2F0)           // ivory blue
-    MergeTier.STRANGE_PLANET -> Color(0xFF3FB6C4)
+    MergeTier.STRANGE_PLANET -> Color(0xFF2F6FB0)  // ocean blue
     MergeTier.GAS_GIANT -> Color(0xFFD98A3D)
     MergeTier.STAR -> Color(0xFFFFD66B)
     MergeTier.NEUTRON_STAR -> Color(0xFF9FD6FF)
