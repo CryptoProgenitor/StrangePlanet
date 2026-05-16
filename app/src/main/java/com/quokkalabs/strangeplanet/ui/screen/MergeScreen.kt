@@ -173,38 +173,41 @@ fun MergeScreen(
                 }
 
                 // ── HUD pill ────────────────────────────────────────────────
-                Row(
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 28.dp)
                         .background(DeepNavy.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
                         .padding(horizontal = 20.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(22.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    HudStat("MASS ACCUMULATED", state.score.toString())
-                    HudStat("RECORD", state.highScore.toString())
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            "UPCOMING",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            val queue = listOf(state.nextTier) + state.upcoming.take(2)
-                            for (idx in queue.indices) {
-                                val tier = queue[idx]
-                                val sizeDp = if (idx == 0) 20.dp else 14.dp
-                                val alpha = if (idx == 0) 1f else if (idx == 1) 0.75f else 0.55f
-                                Canvas(modifier = Modifier.size(sizeDp)) {
-                                    val r = size.minDimension / 2f
-                                    drawOrb(Orb(tier.ordinal.toLong() * 31L + idx.toLong(), tier, r, r), r, alphaMul = alpha)
-                                }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(22.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        HudStat("MASS ACCUMULATED", state.score.toString())
+                        HudStat("RECORD", state.highScore.toString())
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "UPCOMING",
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val queue = listOf(state.nextTier) + state.upcoming.take(2)
+                        for (idx in queue.indices) {
+                            val tier = queue[idx]
+                            val sizeDp = if (idx == 0) 40.dp else 28.dp
+                            val alpha = if (idx == 0) 1f else if (idx == 1) 0.75f else 0.55f
+                            Canvas(modifier = Modifier.size(sizeDp)) {
+                                val r = size.minDimension / 2f
+                                drawOrb(Orb(tier.ordinal.toLong() * 31L + idx.toLong(), tier, r, r), r, alphaMul = alpha)
                             }
                         }
                     }
