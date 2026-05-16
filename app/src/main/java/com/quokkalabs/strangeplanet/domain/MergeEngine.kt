@@ -24,8 +24,8 @@ class MergeEngine(
     private val vesselBottom = screenHeight * 0.93f
 
     private val gravity = screenHeight * 3.1f      // px / s^2
-    private val restitution = 0.12f
-    private val wallDamp = 0.38f
+    private val restitution = 0.34f
+    private val wallDamp = 0.52f
     private val airDrag = 0.999f
     private val maxSpeed = screenHeight * 2.4f
 
@@ -145,7 +145,9 @@ class MergeEngine(
                 val ra = radiusOf(a.tier)
                 val rb = radiusOf(b.tier)
                 val d = hypot(b.x - a.x, b.y - a.y)
-                if (d < (ra + rb) * 0.92f) {
+                // The collision solver separates same-tier orbs to exactly
+                // (ra + rb); treat anything at/within contact as a merge.
+                if (d < (ra + rb) * 1.06f) {
                     merged.add(a.id)
                     merged.add(b.id)
                     val mx = (a.x + b.x) / 2f
