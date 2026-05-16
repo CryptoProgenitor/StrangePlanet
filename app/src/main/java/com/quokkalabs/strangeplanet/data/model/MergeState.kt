@@ -8,17 +8,25 @@ fun nextOrbId(): Long = ++orbIdCounter
  * fraction of the containment vessel's width, so everything scales with the
  * screen. [next] is the tier produced when two of this tier merge.
  */
-enum class MergeTier(val displayName: String, val radiusFrac: Float) {
-    DUST_MOTE("INSIGNIFICANT SPECK", 0.034f),
-    PEBBLE("SMALL HARD SPHERE", 0.046f),
-    BOULDER("LARGE HARD SPHERE", 0.062f),
-    MOONLET("MINOR SATELLITE", 0.082f),
-    MOON("ORBITING COMPANION", 0.104f),
-    STRANGE_PLANET("HOME. ALLEGEDLY.", 0.128f),
-    GAS_GIANT("ENORMOUS GAS SPHERE", 0.152f),
-    STAR("NEARBY LUMINOUS SPHERE", 0.178f),
-    NEUTRON_STAR("DENSE STELLAR REMNANT", 0.204f),
-    BLACK_HOLE("THE INEVITABLE VOID", 0.232f);
+/**
+ * [mu] is the surface friction coefficient. Pairwise friction adds (rough
+ * regolith bodies grip and spin each other; smooth/luminous bodies slide).
+ */
+enum class MergeTier(
+    val displayName: String,
+    val radiusFrac: Float,
+    val mu: Float,
+) {
+    DUST_MOTE("INSIGNIFICANT SPECK", 0.034f, 0.55f),
+    PEBBLE("SMALL HARD SPHERE", 0.046f, 0.60f),
+    BOULDER("LARGE HARD SPHERE", 0.062f, 0.65f),
+    MOONLET("MINOR SATELLITE", 0.082f, 0.45f),
+    MOON("ORBITING COMPANION", 0.104f, 0.35f),
+    STRANGE_PLANET("HOME. ALLEGEDLY.", 0.128f, 0.40f),
+    GAS_GIANT("ENORMOUS GAS SPHERE", 0.152f, 0.22f),
+    STAR("NEARBY LUMINOUS SPHERE", 0.178f, 0.16f),
+    NEUTRON_STAR("DENSE STELLAR REMNANT", 0.204f, 0.14f),
+    BLACK_HOLE("THE INEVITABLE VOID", 0.232f, 0.10f);
 
     val next: MergeTier? get() = entries.getOrNull(ordinal + 1)
 
@@ -35,6 +43,9 @@ data class Orb(
     val y: Float,
     val vx: Float = 0f,
     val vy: Float = 0f,
+    // Rigid-body rotation: angle (radians) and angular velocity (rad/s).
+    val angle: Float = 0f,
+    val omega: Float = 0f,
 )
 
 /** Lifetime (frames) of a merge burst effect. */

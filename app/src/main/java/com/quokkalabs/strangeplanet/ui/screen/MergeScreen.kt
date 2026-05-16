@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -360,14 +361,20 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
         addOval(Rect(o.x - r, o.y - r, o.x + r, o.y + r))
     }
     clipPath(orbPath) {
-        when (o.tier) {
-            MergeTier.DUST_MOTE, MergeTier.PEBBLE, MergeTier.BOULDER,
-            MergeTier.MOONLET, MergeTier.MOON -> drawCraters(o, r, base, alphaMul)
-            MergeTier.STRANGE_PLANET -> drawPlanetFeatures(o, r, base, alphaMul)
-            MergeTier.GAS_GIANT -> drawGasGiant(o, r, base, alphaMul)
-            MergeTier.STAR -> drawStarSurface(o, r, alphaMul)
-            MergeTier.NEUTRON_STAR -> drawNeutronCore(o, r, alphaMul)
-            else -> {}
+        // Surface texture rotates with the body; lighting (below) does not.
+        rotate(
+            degrees = Math.toDegrees(o.angle.toDouble()).toFloat(),
+            pivot = center,
+        ) {
+            when (o.tier) {
+                MergeTier.DUST_MOTE, MergeTier.PEBBLE, MergeTier.BOULDER,
+                MergeTier.MOONLET, MergeTier.MOON -> drawCraters(o, r, base, alphaMul)
+                MergeTier.STRANGE_PLANET -> drawPlanetFeatures(o, r, base, alphaMul)
+                MergeTier.GAS_GIANT -> drawGasGiant(o, r, base, alphaMul)
+                MergeTier.STAR -> drawStarSurface(o, r, alphaMul)
+                MergeTier.NEUTRON_STAR -> drawNeutronCore(o, r, alphaMul)
+                else -> {}
+            }
         }
     }
 
@@ -553,11 +560,11 @@ private fun DrawScope.drawPop(p: Pop) {
 }
 
 private fun tierColor(t: MergeTier): Color = when (t) {
-    MergeTier.DUST_MOTE -> Color(0xFF8A8A96)
-    MergeTier.PEBBLE -> Color(0xFF6E7486)
-    MergeTier.BOULDER -> Color(0xFF8C7A5E)
-    MergeTier.MOONLET -> Color(0xFFB9B6C4)
-    MergeTier.MOON -> Color(0xFFD7E2F0)
+    MergeTier.DUST_MOTE -> Color(0xFFB59A6E)      // dusty ochre
+    MergeTier.PEBBLE -> Color(0xFF5C7392)         // slate blue
+    MergeTier.BOULDER -> Color(0xFFB05A34)        // rust brown
+    MergeTier.MOONLET -> Color(0xFF7FA8A0)        // pale teal-grey
+    MergeTier.MOON -> Color(0xFFD7E2F0)           // ivory blue
     MergeTier.STRANGE_PLANET -> Color(0xFF3FB6C4)
     MergeTier.GAS_GIANT -> Color(0xFFD98A3D)
     MergeTier.STAR -> Color(0xFFFFD66B)

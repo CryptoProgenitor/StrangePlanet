@@ -30,11 +30,23 @@ class MergeEngine(
     private val wallDamp = 0.52f
     private val airDrag = 0.999f
     private val maxSpeed = screenHeight * 2.4f
+    private val angularDrag = 0.992f               // spin bleeds off slowly
+    private val maxOmega = 26f                     // rad/s spin clamp
+    private val floorMu = 0.7f                     // vessel surface roughness
 
     private var cooldown = 0
     private var overflowTicks = 0
 
     fun radiusOf(tier: MergeTier): Float = tier.radiusFrac * vesselWidth
+
+    // Relative mass ∝ area; polar moment of a disc I = ½·m·r².
+    private fun massOf(tier: MergeTier): Float =
+        tier.radiusFrac * tier.radiusFrac * 100f
+
+    private fun inertiaOf(tier: MergeTier): Float {
+        val r = radiusOf(tier)
+        return 0.5f * massOf(tier) * r * r
+    }
 
     fun createInitialState(highScore: Int): MergeState {
         cooldown = 0
@@ -132,7 +144,15 @@ class MergeEngine(
                     val k = maxSpeed / sp
                     vx *= k; vy *= k
                 }
-                orbs[i] = o.copy(x = o.x + vx * dt, y = o.y + vy * dt, vx = vx, vy = vy)
+                var omega = (o.omega * angularDrag).coerceIn(-maxOmega, maxOmega)
+                orbs[i] = o.copy(
+                    x = o.x + vx * dt,
+                    y = o.y + vy * dt,
+                    vx = vx,
+                    vy = vy,
+                    angle = o.angle + omega * dt,
+                    omega = omega,
+                )
             }
             resolveWalls(orbs)
             repeat(3) { resolveCollisions(orbs) }
@@ -230,18 +250,46 @@ class MergeEngine(
         for (i in orbs.indices) {
             val o = orbs[i]
             val r = radiusOf(o.tier)
-            var x = o.x; var y = o.y; var vx = o.vx; var vy = o.vy
-            if (x - r < vesselLeft) {
-                x = vesselLeft + r; vx = -vx * wallDamp
-            } else if (x + r > vesselRight) {
-                x = vesselRight - r; vx = -vx * wallDamp
+            val m = massOf(o.tier)
+            val inertia = inertiaOf(o.tier)
+            var x = o.x; var y = o.y
+            var vx = o.vx; var vy = o.vy; var omega = o.omega
+
+            // Side walls — bounce + a little wall friction → spin.
+            if (x - r < vesselLeft || x + r > vesselRight) {
+                x = if (x - r < vesselLeft) vesselLeft + r else vesselRight - r
+                val impactN = m * kotlin.math.abs(vx)
+                vx = -vx * wallDamp
+                // Tangent is vertical; contact at ±r on x.
+                val slip = vy - omega * r
+                val mu = (floorMu * o.tier.mu).coerceAtMost(1.2f)
+                val jn = impactN + m * gravity * (1f / 60f) * 0.4f
+                val kt = 3f / m
+                var jt = -slip / kt
+                val maxJt = mu * jn
+                jt = jt.coerceIn(-maxJt, maxJt)
+                vy += jt / m
+                omega += -(r * jt) / inertia
             }
+
+            // Floor — bounce + Coulomb friction that converts slip to roll.
             if (y + r > vesselBottom) {
+                val impactN = m * kotlin.math.abs(vy)
                 y = vesselBottom - r
                 vy = -vy * wallDamp
-                vx *= 0.86f // floor friction
+                // Contact tangential slip at the bottom point.
+                val slip = vx - omega * r
+                val mu = (floorMu * o.tier.mu).coerceAtMost(1.2f)
+                val jn = impactN + m * gravity * (1f / 60f)
+                val kt = 3f / m                    // 1/m + r²/I  (I = ½mr²)
+                var jt = -slip / kt
+                val maxJt = mu * jn
+                jt = jt.coerceIn(-maxJt, maxJt)
+                vx += jt / m
+                omega += -(r * jt) / inertia
             }
-            orbs[i] = o.copy(x = x, y = y, vx = vx, vy = vy)
+
+            orbs[i] = o.copy(x = x, y = y, vx = vx, vy = vy, omega = omega)
         }
     }
 
@@ -264,19 +312,46 @@ class MergeEngine(
                     val ay = a.y - ny * overlap
                     val bx = b.x + nx * overlap
                     val by = b.y + ny * overlap
-                    // Equal-mass impulse along the contact normal.
+                    // Equal-mass impulse along the contact normal (keeps the
+                    // tuned stacking/bounce feel unchanged).
                     val rvx = b.vx - a.vx
                     val rvy = b.vy - a.vy
                     val relN = rvx * nx + rvy * ny
                     var avx = a.vx; var avy = a.vy
                     var bvx = b.vx; var bvy = b.vy
+                    var aw = a.omega; var bw = b.omega
                     if (relN < 0f) {
                         val jImp = -(1f + restitution) * relN / 2f
                         avx -= jImp * nx; avy -= jImp * ny
                         bvx += jImp * nx; bvy += jImp * ny
+
+                        // ── Tangential (Coulomb) friction + torque ──────────
+                        val ma = massOf(a.tier)
+                        val mb = massOf(b.tier)
+                        val ia = inertiaOf(a.tier)
+                        val ib = inertiaOf(b.tier)
+                        // Tangent perpendicular to the contact normal.
+                        val tx = -ny
+                        val ty = nx
+                        // Relative tangential surface speed (incl. spin).
+                        val vt = (a.vx - b.vx) * tx + (a.vy - b.vy) * ty +
+                            aw * ra + bw * rb
+                        // k_t = 1/ma+1/mb + ra²/Ia + rb²/Ib  (= 3/ma+3/mb).
+                        val kt = 3f / ma + 3f / mb
+                        // Physically-correct normal impulse for the cap.
+                        val mEff = (ma * mb) / (ma + mb)
+                        val jnMag = mEff * (1f + restitution) * (-relN)
+                        val muPair = (a.tier.mu + b.tier.mu).coerceAtMost(1.4f)
+                        var jt = -vt / kt
+                        val maxJt = muPair * jnMag
+                        jt = jt.coerceIn(-maxJt, maxJt)
+                        avx += jt / ma * tx; avy += jt / ma * ty
+                        bvx -= jt / mb * tx; bvy -= jt / mb * ty
+                        aw += ra * jt / ia
+                        bw += rb * jt / ib
                     }
-                    orbs[i] = a.copy(x = ax, y = ay, vx = avx, vy = avy)
-                    orbs[j] = b.copy(x = bx, y = by, vx = bvx, vy = bvy)
+                    orbs[i] = a.copy(x = ax, y = ay, vx = avx, vy = avy, omega = aw)
+                    orbs[j] = b.copy(x = bx, y = by, vx = bvx, vy = bvy, omega = bw)
                 } else if (dist <= 0.0001f) {
                     // Perfectly coincident — nudge apart deterministically.
                     orbs[j] = b.copy(x = b.x + ra * 0.5f)

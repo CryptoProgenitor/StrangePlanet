@@ -116,6 +116,8 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
                 put("y", o.y.toDouble())
                 put("vx", o.vx.toDouble())
                 put("vy", o.vy.toDouble())
+                put("angle", o.angle.toDouble())
+                put("omega", o.omega.toDouble())
             })
         }
         root.put("orbs", arr)
@@ -140,6 +142,8 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
                         y = j.getDouble("y").toFloat(),
                         vx = j.getDouble("vx").toFloat(),
                         vy = j.getDouble("vy").toFloat(),
+                        angle = j.optDouble("angle", 0.0).toFloat(),
+                        omega = j.optDouble("omega", 0.0).toFloat(),
                     ),
                 )
             }
