@@ -18,15 +18,17 @@ import com.quokkalabs.strangeplanet.ui.screen.PacScreen
 import com.quokkalabs.strangeplanet.ui.screen.PongScreen
 import com.quokkalabs.strangeplanet.ui.screen.SettingsScreen
 import com.quokkalabs.strangeplanet.ui.screen.SpaceInvadersScreen
+import com.quokkalabs.strangeplanet.ui.screen.StrangeMatchScreen
 import com.quokkalabs.strangeplanet.ui.theme.StrangePlanetTheme
 import com.quokkalabs.strangeplanet.ui.viewmodel.AsteroidViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.PacViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.PongViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.SpaceInvadersViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.StrangePlanetViewModel
+import com.quokkalabs.strangeplanet.ui.viewmodel.StrangeMatchViewModel
 
 private enum class Screen {
-    INTERACTIVE, SETTINGS, PONG, SPACE_INVADERS, PACMAN, ASTEROIDS
+    INTERACTIVE, SETTINGS, PONG, SPACE_INVADERS, PACMAN, ASTEROIDS, STRANGE_MATCH
 }
 
 class MainActivity : ComponentActivity() {
@@ -79,6 +81,13 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = Screen.INTERACTIVE },
                             )
                         }
+                        Screen.STRANGE_MATCH -> {
+                            val smViewModel: StrangeMatchViewModel = viewModel()
+                            StrangeMatchScreen(
+                                viewModel = smViewModel,
+                                onBack = { screen = Screen.INTERACTIVE },
+                            )
+                        }
                     }
 
                     if (showBulletin && screen == Screen.INTERACTIVE) {
@@ -98,6 +107,10 @@ class MainActivity : ComponentActivity() {
                             onNavigateToAsteroids = {
                                 showBulletin = false
                                 screen = Screen.ASTEROIDS
+                            },
+                            onNavigateToStrangeMatch = {
+                                showBulletin = false
+                                screen = Screen.STRANGE_MATCH
                             },
                             onNavigateToSettings = {
                                 showBulletin = false

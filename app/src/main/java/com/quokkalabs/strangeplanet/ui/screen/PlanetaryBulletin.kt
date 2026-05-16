@@ -39,6 +39,7 @@ fun PlanetaryBulletin(
     onNavigateToSpaceInvaders: () -> Unit,
     onNavigateToPacman: () -> Unit,
     onNavigateToAsteroids: () -> Unit,
+    onNavigateToStrangeMatch: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -51,6 +52,9 @@ fun PlanetaryBulletin(
     }
     val pacHighScore = remember {
         context.getSharedPreferences("pac_prefs", 0).getInt("high_score", 0)
+    }
+    val strangeMatchHighScore = remember {
+        context.getSharedPreferences("strange_match_prefs", 0).getInt("high_score", 0)
     }
     val versionName = packageInfo.versionName ?: "?"
     val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -134,6 +138,16 @@ fun PlanetaryBulletin(
                 title = "Descending Entity Defence",
                 subtitle = "Neutralise hostile creatures",
                 onClick = onNavigateToSpaceInvaders,
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            BulletinCard(
+                emoji = "🍬",
+                title = "Strange Match",
+                subtitle = if (strangeMatchHighScore > 0) "Record: $strangeMatchHighScore sustenance"
+                    else "Swap strange beings; match 3 or more",
+                onClick = onNavigateToStrangeMatch,
             )
 
             Spacer(Modifier.height(10.dp))
