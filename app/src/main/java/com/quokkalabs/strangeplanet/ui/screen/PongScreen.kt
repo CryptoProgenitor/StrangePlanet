@@ -1423,9 +1423,11 @@ private fun ModeButton(
         Text(
             text = label,
             color = textColor,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }

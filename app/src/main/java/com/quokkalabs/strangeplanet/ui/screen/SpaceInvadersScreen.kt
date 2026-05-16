@@ -289,34 +289,51 @@ fun SpaceInvadersScreen(
                     )
                 }
 
-                // ── HUD (all top-end) ───────────────────────────────────────
-                Column(
+                // ── HUD ────────────────────────────────────────────────────
+
+                // Lives pill — top center
+                Row(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 28.dp, end = 14.dp),
-                    horizontalAlignment = Alignment.End,
+                        .align(Alignment.TopCenter)
+                        .padding(top = 28.dp)
+                        .background(DeepNavy.copy(alpha = 0.65f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        repeat(state.lives) { i ->
-                            Image(
-                                painter = painterResource(R.drawable.sp_invaders_alien_dad),
-                                contentDescription = null,
-                                modifier = Modifier.size(30.dp),
-                            )
-                            if (i < state.lives - 1) Spacer(Modifier.width(3.dp))
-                        }
+                    repeat(state.lives.coerceAtLeast(0)) { i ->
+                        Image(
+                            painter = painterResource(R.drawable.sp_invaders_alien_dad),
+                            contentDescription = "Life ${i + 1}",
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
-                    Spacer(Modifier.height(2.dp))
+                    if (state.lives <= 0) {
+                        Text("—", color = Color.White.copy(alpha = 0.4f), fontSize = 14.sp)
+                    }
+                }
+
+                // Score + wave pill — top center, below lives
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 70.dp)
+                        .background(DeepNavy.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 16.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
                         text = "${state.score}",
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = AlienPink,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                     )
+                    Text("·", color = Color.White.copy(alpha = 0.3f), fontSize = 14.sp)
                     Text(
                         text = "Wave ${state.wave}",
-                        color = Color.White.copy(alpha = 0.35f),
-                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 13.sp,
                     )
                 }
 
