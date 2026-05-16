@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -195,7 +196,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         when (_state.value.phase) {
             PacPhase.LEVEL_CLEARED -> {
                 delay(1800)
-                while (paused && isActive) delay(50)
+                while (paused && currentCoroutineContext().isActive) delay(50)
                 if (_state.value.phase == PacPhase.LEVEL_CLEARED) {
                     val s = _state.value
                     _state.value = e.createInitialState(
@@ -208,7 +209,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
             }
             PacPhase.DYING -> {
                 delay(2000)
-                while (paused && isActive) delay(50)
+                while (paused && currentCoroutineContext().isActive) delay(50)
                 val s = _state.value
                 if (s.phase == PacPhase.DYING) {
                     if (s.lives <= 0) {
@@ -229,7 +230,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
             PacPhase.LEVEL_CLEARED -> {
                 btManager?.sendTick(s, emptyList(), emptyList())
                 delay(1800)
-                while (paused && isActive) delay(50)
+                while (paused && currentCoroutineContext().isActive) delay(50)
                 if (_state.value.phase == PacPhase.LEVEL_CLEARED) {
                     val cur = _state.value
                     _state.value = e.createInitialState(
@@ -247,7 +248,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
             PacPhase.DYING -> {
                 btManager?.sendTick(s, emptyList(), emptyList())
                 delay(2000)
-                while (paused && isActive) delay(50)
+                while (paused && currentCoroutineContext().isActive) delay(50)
                 val cur = _state.value
                 if (cur.phase == PacPhase.DYING) {
                     if (cur.lives <= 0) {

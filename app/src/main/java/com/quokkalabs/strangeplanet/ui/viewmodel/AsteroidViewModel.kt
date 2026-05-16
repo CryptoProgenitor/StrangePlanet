@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -76,7 +77,7 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
                     when (_state.value.phase) {
                         AsteroidPhase.LEVEL_CLEARED -> {
                             delay(1800)
-                            while (paused && isActive) delay(50)
+                            while (paused && currentCoroutineContext().isActive) delay(50)
                             if (_state.value.phase == AsteroidPhase.LEVEL_CLEARED) {
                                 val st = _state.value
                                 _state.value = e.createInitialState(
@@ -90,7 +91,7 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
                         }
                         AsteroidPhase.DYING -> {
                             delay(1600)
-                            while (paused && isActive) delay(50)
+                            while (paused && currentCoroutineContext().isActive) delay(50)
                             if (_state.value.phase == AsteroidPhase.DYING) {
                                 _state.value = e.respawnShip(_state.value)
                             }

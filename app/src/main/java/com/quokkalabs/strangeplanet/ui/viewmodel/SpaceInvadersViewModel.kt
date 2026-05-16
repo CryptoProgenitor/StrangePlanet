@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -115,7 +116,7 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
                 // Auto-advance after wave clear
                 if (_state.value.phase == SIPhase.WAVE_CLEAR) {
                     delay(1500)
-                    while (paused && isActive) delay(50)
+                    while (paused && currentCoroutineContext().isActive) delay(50)
                     if (_state.value.phase == SIPhase.WAVE_CLEAR) {
                         val s = _state.value
                         _state.value = e.createInitialState(
