@@ -29,6 +29,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -100,6 +101,8 @@ fun MergeScreen(
 
     val blockInput by rememberUpdatedState(showExit || showResume)
 
+    LaunchedEffect(blockInput) { viewModel.setPaused(blockInput) }
+
     CosmicBackground(showStars = true) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val screenWidthPx = with(density) { maxWidth.toPx() }
@@ -107,7 +110,7 @@ fun MergeScreen(
 
             DisposableEffect(screenWidthPx, screenHeightPx) {
                 viewModel.initGame(screenWidthPx, screenHeightPx)
-                onDispose { }
+                onDispose { viewModel.stopLoop() }
             }
 
             Box(
