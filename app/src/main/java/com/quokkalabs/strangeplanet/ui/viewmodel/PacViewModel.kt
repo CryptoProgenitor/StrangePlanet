@@ -16,6 +16,7 @@ import com.quokkalabs.strangeplanet.data.model.PacSettings
 import com.quokkalabs.strangeplanet.data.model.SeekerEntity
 import com.quokkalabs.strangeplanet.data.model.SeekerMode
 import com.quokkalabs.strangeplanet.data.model.SeekerType
+import com.quokkalabs.strangeplanet.debug.GameAudit
 import com.quokkalabs.strangeplanet.domain.MazeEngine
 import android.util.Log
 import kotlinx.coroutines.Job
@@ -112,6 +113,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
             _state.value = eng.createInitialState(highScore = highScore)
         }
         startLoop()
+        GameAudit.attachPac(viewModelScope, state, ::onSwipe, ::onTapToStart)
     }
 
     private fun startLoop() {

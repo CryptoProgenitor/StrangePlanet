@@ -9,6 +9,7 @@ import com.quokkalabs.strangeplanet.data.model.MergeState
 import com.quokkalabs.strangeplanet.data.model.MergeTier
 import com.quokkalabs.strangeplanet.data.model.Orb
 import com.quokkalabs.strangeplanet.data.model.nextOrbId
+import com.quokkalabs.strangeplanet.debug.GameAudit
 import com.quokkalabs.strangeplanet.domain.MergeEngine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -69,6 +70,7 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
             _state.value = initial
         }
         startLoop()
+        GameAudit.attachMerge(viewModelScope, state, ::onAim, ::onRelease)
     }
 
     private fun startLoop() {

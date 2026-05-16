@@ -9,6 +9,7 @@ import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.SIPhase
 import com.quokkalabs.strangeplanet.data.model.SISettings
 import com.quokkalabs.strangeplanet.data.model.SpaceInvadersState
+import com.quokkalabs.strangeplanet.debug.GameAudit
 import com.quokkalabs.strangeplanet.domain.SpaceInvadersEngine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -64,6 +65,7 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
             _state.value = eng.createInitialState()
         }
         startLoop()
+        GameAudit.attachSpaceInvaders(viewModelScope, state, ::onTouch, ::onTapToStart)
     }
 
     private fun startLoop() {

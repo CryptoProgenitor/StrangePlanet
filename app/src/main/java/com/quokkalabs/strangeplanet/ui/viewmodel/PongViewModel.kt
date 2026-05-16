@@ -38,6 +38,7 @@ import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.random.Random
 import com.quokkalabs.strangeplanet.debug.PongDebugMetrics
+import com.quokkalabs.strangeplanet.debug.GameAudit
 
 class PongViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -126,6 +127,10 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             _gameState.value = eng.createInitialState()
         }
         startLoops()
+        GameAudit.attachPong(viewModelScope, gameState) {
+            setBotMode(true)
+            setDebugOverlay(true)
+        }
     }
 
     private fun startLoops() {

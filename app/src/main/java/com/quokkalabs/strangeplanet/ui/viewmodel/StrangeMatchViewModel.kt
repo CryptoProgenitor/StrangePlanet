@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.data.model.*
+import com.quokkalabs.strangeplanet.debug.GameAudit
 import com.quokkalabs.strangeplanet.domain.StrangeMatchEngine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -49,6 +50,7 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
         if (hasSavedSession() && _state.value.phase != StrangeMatchPhase.READY) {
             _state.value = StrangeMatchState(highScore = prefs.getInt("high_score", 0))
         }
+        GameAudit.attachStrangeMatch(viewModelScope, state, ::onSwipeTo, ::startGame)
     }
 
     /** Run a swap so a thrown step can't strand the board in ANIMATING. */

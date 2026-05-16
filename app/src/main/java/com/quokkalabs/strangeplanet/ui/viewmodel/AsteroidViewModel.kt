@@ -8,6 +8,7 @@ import com.quokkalabs.strangeplanet.data.model.AsteroidGameState
 import com.quokkalabs.strangeplanet.data.model.AsteroidInput
 import com.quokkalabs.strangeplanet.data.model.AsteroidPhase
 import com.quokkalabs.strangeplanet.data.model.AsteroidSettings
+import com.quokkalabs.strangeplanet.debug.GameAudit
 import com.quokkalabs.strangeplanet.domain.AsteroidEngine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -61,6 +62,7 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
             _state.value = eng.createInitialState(highScore = highScore)
         }
         startLoop()
+        GameAudit.attachAsteroid(viewModelScope, state, ::setInput, ::onTapToStart)
     }
 
     private fun startLoop() {
