@@ -4,6 +4,8 @@ import com.quokkalabs.strangeplanet.data.model.MergePhase
 import com.quokkalabs.strangeplanet.data.model.MergeState
 import com.quokkalabs.strangeplanet.data.model.MergeTier
 import com.quokkalabs.strangeplanet.data.model.Orb
+import com.quokkalabs.strangeplanet.data.model.POP_MAX
+import com.quokkalabs.strangeplanet.data.model.Pop
 import com.quokkalabs.strangeplanet.data.model.nextOrbId
 import kotlin.math.hypot
 import kotlin.random.Random
@@ -61,6 +63,7 @@ class MergeEngine(
         return s.copy(
             phase = MergePhase.PLAYING,
             orbs = emptyList(),
+            pops = emptyList(),
             score = 0,
             currentTier = randomDrop(),
             nextTier = randomDrop(),
@@ -90,6 +93,10 @@ class MergeEngine(
         var score = s.score
         var mergeName = s.lastMergeName
         var voidFlash = false
+
+        // Age existing merge bursts, dropping the expired ones.
+        val pops = ArrayList<Pop>(s.pops.size + 4)
+        for (p in s.pops) if (p.age + 1 < POP_MAX) pops.add(p.copy(age = p.age + 1))
         var currentTier = s.currentTier
         var nextTier = s.nextTier
 
@@ -169,6 +176,10 @@ class MergeEngine(
                         score += 250 + consumed * 30
                         mergeName = "THE VOID CONSUMES."
                         voidFlash = true
+                        pops.add(
+                            Pop(nextOrbId(), mx, my, radiusOf(MergeTier.BLACK_HOLE),
+                                MergeTier.BLACK_HOLE, big = true),
+                        )
                     } else if (formed != null) {
                         spawned.add(
                             Orb(
@@ -182,6 +193,7 @@ class MergeEngine(
                         )
                         score += (formed.ordinal + 1) * 5
                         mergeName = formed.displayName
+                        pops.add(Pop(nextOrbId(), mx, my, radiusOf(formed), formed))
                     }
                     didMerge = true
                     break
@@ -202,6 +214,7 @@ class MergeEngine(
 
         s = s.copy(
             orbs = orbs,
+            pops = pops,
             score = score,
             currentTier = currentTier,
             nextTier = nextTier,

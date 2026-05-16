@@ -51,6 +51,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.quokkalabs.strangeplanet.data.model.MergePhase
 import com.quokkalabs.strangeplanet.data.model.MergeTier
 import com.quokkalabs.strangeplanet.data.model.Orb
+import com.quokkalabs.strangeplanet.data.model.POP_MAX
+import com.quokkalabs.strangeplanet.data.model.Pop
+import kotlin.math.cos
+import kotlin.math.sin
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
@@ -132,6 +136,9 @@ fun MergeScreen(
                         val r = o.tier.radiusFrac * (state.vesselRight - state.vesselLeft)
                         drawOrb(o, r)
                     }
+
+                    // Merge bursts (drawn on top of everything)
+                    state.pops.forEach { drawPop(it) }
                 }
 
                 // ── HUD pill ────────────────────────────────────────────────
@@ -301,6 +308,51 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
         center = center,
         style = Stroke(width = r * 0.06f),
     )
+}
+
+private fun DrawScope.drawPop(p: Pop) {
+    val t = (p.age / POP_MAX.toFloat()).coerceIn(0f, 1f)
+    val ease = 1f - (1f - t) * (1f - t)        // fast then settle
+    val fade = 1f - t
+    val center = Offset(p.x, p.y)
+    val tint = if (p.tier == MergeTier.BLACK_HOLE || p.tier == null) {
+        Color(0xFFE8B4C8)
+    } else {
+        lighten(tierColor(p.tier))
+    }
+    val spread = if (p.big) 3.6f else 2.2f
+
+    // Bright flash core — strong at first, gone quickly
+    val coreFade = fade * fade
+    if (coreFade > 0.02f) {
+        drawCircle(
+            color = Color.White.copy(alpha = 0.85f * coreFade),
+            radius = p.radius * (0.55f + ease * 0.7f),
+            center = center,
+        )
+    }
+
+    // Expanding ring
+    val ringR = p.radius * (1f + spread * ease)
+    drawCircle(
+        color = tint.copy(alpha = 0.85f * fade),
+        radius = ringR,
+        center = center,
+        style = Stroke(width = (p.radius * 0.30f * fade).coerceAtLeast(1f)),
+    )
+
+    // Radiating sparks
+    val sparks = if (p.big) 14 else 9
+    val sparkR = p.radius * 0.16f * fade
+    for (i in 0 until sparks) {
+        val ang = (i.toFloat() / sparks) * 2f * Math.PI.toFloat()
+        val dist = ringR * 0.96f
+        drawCircle(
+            color = tint.copy(alpha = 0.9f * fade),
+            radius = sparkR.coerceAtLeast(0.5f),
+            center = Offset(p.x + cos(ang) * dist, p.y + sin(ang) * dist),
+        )
+    }
 }
 
 private fun tierColor(t: MergeTier): Color = when (t) {

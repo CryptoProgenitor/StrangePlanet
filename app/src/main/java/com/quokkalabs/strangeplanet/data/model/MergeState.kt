@@ -37,10 +37,25 @@ data class Orb(
     val vy: Float = 0f,
 )
 
+/** Lifetime (frames) of a merge burst effect. */
+const val POP_MAX = 16
+
+/** Transient visual burst spawned at a merge point. Pure cosmetic. */
+data class Pop(
+    val id: Long,
+    val x: Float,
+    val y: Float,
+    val radius: Float,
+    val tier: MergeTier?,
+    val big: Boolean = false,
+    val age: Int = 0,
+)
+
 enum class MergePhase { READY, PLAYING, GAME_OVER }
 
 data class MergeState(
     val orbs: List<Orb> = emptyList(),
+    val pops: List<Pop> = emptyList(),
     val currentTier: MergeTier = MergeTier.DUST_MOTE,
     val nextTier: MergeTier = MergeTier.PEBBLE,
     val spoutX: Float = 0f,
