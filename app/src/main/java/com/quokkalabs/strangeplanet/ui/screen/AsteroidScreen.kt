@@ -285,6 +285,7 @@ fun AsteroidScreen(
                 AsteroidPhase.READY -> CenterBanner(
                     "SPATIAL DEBRIS AVOIDANCE",
                     "Tap to deploy Rollsuck Supreme.",
+                    onAbandon = { viewModel.resetGame(); onBack() },
                 )
                 AsteroidPhase.DYING -> CenterBanner(
                     "THIS IS NOT IDEAL",
@@ -668,7 +669,7 @@ private fun HudStat(label: String, value: String) {
 }
 
 @Composable
-private fun BoxScope.CenterBanner(title: String, subtitle: String) {
+private fun BoxScope.CenterBanner(title: String, subtitle: String, onAbandon: (() -> Unit)? = null) {
     Column(
         modifier = Modifier
             .align(Alignment.Center)
@@ -690,5 +691,16 @@ private fun BoxScope.CenterBanner(title: String, subtitle: String) {
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
         )
+        if (onAbandon != null) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Abandon Endeavour",
+                color = Color.White.copy(alpha = 0.35f),
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .clickable(onClick = onAbandon)
+                    .padding(4.dp),
+            )
+        }
     }
 }

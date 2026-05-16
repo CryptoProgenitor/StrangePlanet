@@ -516,6 +516,7 @@ fun PacScreen(
                         onRequestPermissions = { requestBtPermissions() },
                         onSelectSeeker = { viewModel.selectSeeker(it) },
                         onCommenceContest = { viewModel.startBtContest() },
+                        onAbandon = { viewModel.resetGame(); onBack() },
                     )
                     PacPhase.DYING -> CenterBanner(
                         title = if (isClient) "THE BEING FALTERS" else "THIS IS NOT IDEAL",
@@ -863,6 +864,7 @@ private fun PacLobby(
     onRequestPermissions: () -> Unit,
     onSelectSeeker: (SeekerType) -> Unit,
     onCommenceContest: () -> Unit,
+    onAbandon: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -930,6 +932,15 @@ private fun PacLobby(
                     onCommenceContest = onCommenceContest,
                 )
             }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Abandon Endeavour",
+                color = Color.White.copy(alpha = 0.35f),
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .clickable(onClick = onAbandon)
+                    .padding(4.dp),
+            )
         }
     }
 }

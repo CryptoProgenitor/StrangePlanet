@@ -260,6 +260,11 @@ fun PongScreen(
                         onModeSelected = { viewModel.selectMode(it) },
                         onConfigure = { showSettings = true },
                         onCommence = { viewModel.onTapToStart() },
+                        onAbandon = {
+                            if (state.gameMode == GameMode.BLUETOOTH) viewModel.btDisconnect()
+                            if (state.gameMode == GameMode.ONLINE) viewModel.onlineDisconnect()
+                            viewModel.resetGame(); onBack()
+                        },
                         selectedCreature = playerCreature,
                         onSelectCreature = { viewModel.selectCreature(it) },
                         selectedPlayer2Creature = player2Creature,
@@ -648,6 +653,7 @@ private fun ReadyOverlay(
     onModeSelected: (GameMode) -> Unit,
     onConfigure: () -> Unit,
     onCommence: () -> Unit,
+    onAbandon: () -> Unit,
     selectedCreature: Int,
     onSelectCreature: (Int) -> Unit,
     selectedPlayer2Creature: Int,
@@ -862,6 +868,15 @@ private fun ReadyOverlay(
                 LobbyButton("Commence Activity") { onCommence() }
             }
         }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Abandon Endeavour",
+            color = Color.White.copy(alpha = 0.35f),
+            fontSize = 12.sp,
+            modifier = Modifier
+                .clickable(onClick = onAbandon)
+                .padding(4.dp),
+        )
     }
 }
 

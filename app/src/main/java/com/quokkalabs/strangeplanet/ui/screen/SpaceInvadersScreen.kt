@@ -379,6 +379,15 @@ fun SpaceInvadersScreen(
                                 )
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                         )
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            "Abandon Endeavour",
+                            color = Color.White.copy(alpha = 0.35f),
+                            fontSize = 12.sp,
+                            modifier = Modifier
+                                .clickable { viewModel.resetGame(); onBack() }
+                                .padding(4.dp),
+                        )
                     }
                 }
 
