@@ -78,18 +78,24 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
                     when (_state.value.phase) {
                         AsteroidPhase.LEVEL_CLEARED -> {
                             delay(1800)
-                            val st = _state.value
-                            _state.value = e.createInitialState(
-                                level = st.level + 1,
-                                score = st.score,
-                                lives = st.lives,
-                                highScore = highScore,
-                                extraLifeAwarded = st.extraLifeAwarded,
-                            ).copy(phase = AsteroidPhase.PLAYING)
+                            while (paused && isActive) delay(50)
+                            if (_state.value.phase == AsteroidPhase.LEVEL_CLEARED) {
+                                val st = _state.value
+                                _state.value = e.createInitialState(
+                                    level = st.level + 1,
+                                    score = st.score,
+                                    lives = st.lives,
+                                    highScore = highScore,
+                                    extraLifeAwarded = st.extraLifeAwarded,
+                                ).copy(phase = AsteroidPhase.PLAYING)
+                            }
                         }
                         AsteroidPhase.DYING -> {
                             delay(1600)
-                            _state.value = e.respawnShip(_state.value)
+                            while (paused && isActive) delay(50)
+                            if (_state.value.phase == AsteroidPhase.DYING) {
+                                _state.value = e.respawnShip(_state.value)
+                            }
                         }
                         AsteroidPhase.GAME_OVER -> {
                             commitHighScore(_state.value.score)

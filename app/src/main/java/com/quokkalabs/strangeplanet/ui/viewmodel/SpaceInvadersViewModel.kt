@@ -28,6 +28,7 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
     private var engine: SpaceInvadersEngine? = null
     private var loopJob: Job? = null
     @Volatile private var paused = false
+    private var highScore: Int = prefs.getInt(KEY_HIGH_SCORE, 0)
     private val _state = MutableStateFlow(SpaceInvadersState())
     val state: StateFlow<SpaceInvadersState> = _state.asStateFlow()
 
@@ -62,7 +63,7 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
                 .also { engine = it }
 
         if (firstInit || hasSavedSession()) {
-            _state.value = eng.createInitialState()
+            _state.value = eng.createInitialState().copy(highScore = highScore)
         }
         startLoop()
         GameAudit.attachSpaceInvaders(viewModelScope, state, ::onTouch, ::onTapToStart)
@@ -108,18 +109,23 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
                         after.phase == SIPhase.GAME_OVER
                     ) {
                         soundManager.playGameOver()
+                        commitHighScore(after.score)
+                        _state.value = after.copy(highScore = highScore)
                     }
                 }
 
                 // Auto-advance after wave clear
                 if (_state.value.phase == SIPhase.WAVE_CLEAR) {
                     delay(1500)
-                    val s = _state.value
-                    _state.value = e.createInitialState(
-                        wave = s.wave + 1,
-                        score = s.score,
-                        lives = s.lives,
-                    ).copy(phase = SIPhase.PLAYING)
+                    while (paused && isActive) delay(50)
+                    if (_state.value.phase == SIPhase.WAVE_CLEAR) {
+                        val s = _state.value
+                        _state.value = e.createInitialState(
+                            wave = s.wave + 1,
+                            score = s.score,
+                            lives = s.lives,
+                        ).copy(phase = SIPhase.PLAYING, highScore = highScore)
+                    }
                 }
                 } catch (t: Throwable) {
                     // A single bad frame must never permanently kill the loop.
@@ -155,7 +161,7 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
         when (s.phase) {
             SIPhase.READY -> _state.value = e.startGame(s)
             SIPhase.GAME_OVER -> {
-                _state.value = e.createInitialState()
+                _state.value = e.createInitialState().copy(highScore = highScore)
                 _state.value = e.startGame(_state.value)
             }
             else -> {}
@@ -164,7 +170,7 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
 
     fun resetGame() {
         val e = engine ?: return
-        _state.value = e.createInitialState()
+        _state.value = e.createInitialState().copy(highScore = highScore)
         isTouching = false
         playerTouchX = null
     }
@@ -195,7 +201,14 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
         if (screenW > 0f) {
             val eng = SpaceInvadersEngine(screenW, screenH, level)
             engine = eng
-            _state.value = eng.createInitialState()
+            _state.value = eng.createInitialState().copy(highScore = highScore)
+        }
+    }
+
+    private fun commitHighScore(score: Int) {
+        if (score > highScore) {
+            highScore = score
+            prefs.edit().putInt(KEY_HIGH_SCORE, highScore).apply()
         }
     }
 
@@ -205,7 +218,7 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
 
     fun saveSession() {
         val s = _state.value
-        if (s.phase != SIPhase.PLAYING) return
+        if (s.phase != SIPhase.PLAYING && s.phase != SIPhase.PAUSED) return
         prefs.edit()
             .putBoolean(KEY_SESSION, true)
             .putInt("$KEY_SESSION.score", s.score)
@@ -221,7 +234,7 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
             wave = prefs.getInt("$KEY_SESSION.wave", 1),
             score = prefs.getInt("$KEY_SESSION.score", 0),
             lives = prefs.getInt("$KEY_SESSION.lives", 3),
-        )
+        ).copy(highScore = highScore)
         isTouching = false
         playerTouchX = null
         discardSavedSession()
@@ -243,5 +256,6 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
 
     private companion object {
         const val KEY_SESSION = "saved_session"
+        const val KEY_HIGH_SCORE = "high_score"
     }
 }

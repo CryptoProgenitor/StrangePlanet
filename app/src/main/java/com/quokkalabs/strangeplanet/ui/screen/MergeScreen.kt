@@ -186,17 +186,27 @@ fun MergeScreen(
                     HudStat("RECORD", state.highScore.toString())
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            "NEXT",
+                            "UPCOMING",
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
                         )
                         Spacer(Modifier.height(4.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .background(tierColor(state.nextTier), CircleShape),
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val queue = listOf(state.nextTier) + state.upcoming.take(2)
+                            for (idx in queue.indices) {
+                                val tier = queue[idx]
+                                val sizeDp = if (idx == 0) 20.dp else 14.dp
+                                val alpha = if (idx == 0) 1f else if (idx == 1) 0.75f else 0.55f
+                                Canvas(modifier = Modifier.size(sizeDp)) {
+                                    val r = size.minDimension / 2f
+                                    drawOrb(Orb(tier.ordinal.toLong() * 31L + idx.toLong(), tier, r, r), r, alphaMul = alpha)
+                                }
+                            }
+                        }
                     }
                 }
 

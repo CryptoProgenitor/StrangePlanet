@@ -160,17 +160,15 @@ fun SpaceInvadersScreen(
                                 val anyPressed = event.changes.any { it.pressed }
                                 if (anyPressed) {
                                     event.changes.forEach { change ->
-                                        if (change.pressed) {
-                                            viewModel.onTouch(change.position.x)
-                                            if (state.phase == SIPhase.READY ||
-                                                state.phase == SIPhase.GAME_OVER
-                                            ) {
-                                                viewModel.onTapToStart()
-                                            }
-                                        }
+                                        if (change.pressed) viewModel.onTouch(change.position.x)
                                     }
                                 } else {
                                     viewModel.onTouchUp()
+                                    if ((state.phase == SIPhase.READY || state.phase == SIPhase.GAME_OVER) &&
+                                        event.changes.none { it.isConsumed }
+                                    ) {
+                                        viewModel.onTapToStart()
+                                    }
                                 }
                                 event.changes.forEach { it.consume() }
                             }
@@ -498,6 +496,13 @@ fun SpaceInvadersScreen(
                             color = Color.White.copy(alpha = 0.3f),
                             fontSize = 11.sp,
                         )
+                        if (state.highScore > 0) {
+                            Text(
+                                "Personal best: ${state.highScore}",
+                                color = Color.White.copy(alpha = 0.55f),
+                                fontSize = 11.sp,
+                            )
+                        }
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "Tap anywhere to attempt again",

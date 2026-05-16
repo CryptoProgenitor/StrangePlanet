@@ -55,6 +55,7 @@ class MergeEngine(
             orbs = emptyList(),
             currentTier = randomDrop(),
             nextTier = randomDrop(),
+            upcoming = listOf(randomDrop(), randomDrop()),
             spoutX = (vesselLeft + vesselRight) / 2f,
             score = 0,
             highScore = highScore,
@@ -79,6 +80,7 @@ class MergeEngine(
             score = 0,
             currentTier = randomDrop(),
             nextTier = randomDrop(),
+            upcoming = listOf(randomDrop(), randomDrop()),
             canDrop = true,
             lastMergeName = null,
             voidFlash = false,
@@ -111,6 +113,7 @@ class MergeEngine(
         for (p in s.pops) if (p.age + 1 < POP_MAX) pops.add(p.copy(age = p.age + 1))
         var currentTier = s.currentTier
         var nextTier = s.nextTier
+        var upcoming = s.upcoming.ifEmpty { listOf(randomDrop(), randomDrop()) }
 
         // ── Drop ────────────────────────────────────────────────────────────
         if (drop && cooldown <= 0) {
@@ -125,7 +128,8 @@ class MergeEngine(
                 ),
             )
             currentTier = nextTier
-            nextTier = randomDrop()
+            nextTier = upcoming.getOrNull(0) ?: randomDrop()
+            upcoming = (if (upcoming.size > 1) upcoming.subList(1, upcoming.size) else emptyList()) + randomDrop()
             cooldown = 26
         }
         if (cooldown > 0) cooldown--
@@ -231,10 +235,15 @@ class MergeEngine(
         orbs = survivors
 
         // ── Game over: a slow orb resting above the capacity line ──────────
-        val overflowing = orbs.any { o ->
+        val slowAbove = orbs.any { o ->
             (o.y - radiusOf(o.tier)) < vesselTop && hypot(o.vx, o.vy) < screenHeight * 0.18f
         }
-        overflowTicks = if (overflowing) overflowTicks + 1 else 0
+        val fastAbove = !slowAbove && orbs.any { o -> (o.y - radiusOf(o.tier)) < vesselTop }
+        overflowTicks = when {
+            slowAbove -> overflowTicks + 1
+            fastAbove -> (overflowTicks + 1).coerceAtMost(109)
+            else -> 0
+        }
         val phase = if (overflowTicks > 110) MergePhase.GAME_OVER else MergePhase.PLAYING
 
         s = s.copy(
@@ -243,6 +252,7 @@ class MergeEngine(
             score = score,
             currentTier = currentTier,
             nextTier = nextTier,
+            upcoming = upcoming,
             canDrop = cooldown <= 0 && phase == MergePhase.PLAYING,
             lastMergeName = mergeName,
             voidFlash = voidFlash,
