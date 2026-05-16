@@ -12,7 +12,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -135,7 +134,7 @@ fun StrangeMatchScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 12.dp, top = 140.dp)
+                    .padding(start = 12.dp, end = 12.dp, top = 140.dp)
                     .windowInsetsPadding(WindowInsets.navigationBars),
                 contentAlignment = Alignment.Center,
             ) {
@@ -166,8 +165,8 @@ fun StrangeMatchScreen(
                                                     while (true) {
                                                         val event = awaitPointerEvent()
                                                         val ch = event.changes.firstOrNull() ?: break
-                                                        dx += ch.positionChange().x
-                                                        dy += ch.positionChange().y
+                                                        dx += ch.position.x - ch.previousPosition.x
+                                                        dy += ch.position.y - ch.previousPosition.y
                                                         ch.consume()
                                                         if (!ch.pressed) break
                                                     }
