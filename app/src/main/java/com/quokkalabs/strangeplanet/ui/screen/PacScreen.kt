@@ -663,9 +663,11 @@ private fun BoxScope.PacSettingsPanel(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.86f)
+                .widthIn(max = 340.dp)
+                .fillMaxWidth(0.9f)
                 .background(DeepNavy.copy(alpha = 0.96f), RoundedCornerShape(20.dp))
                 .clickable(enabled = false) {}
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -865,8 +867,10 @@ private fun BoxScope.CenterBanner(
     Column(
         modifier = Modifier
             .align(Alignment.Center)
+            .widthIn(max = 340.dp)
+            .fillMaxWidth(0.9f)
             .background(DeepNavy.copy(alpha = 0.88f), RoundedCornerShape(20.dp))
-            .padding(horizontal = 32.dp, vertical = 24.dp),
+            .padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -982,11 +986,11 @@ private fun PacLobby(
             Spacer(Modifier.height(16.dp))
             Text(
                 "Abandon Endeavour",
-                color = Color.White.copy(alpha = 0.55f),
-                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 13.sp,
                 modifier = Modifier
                     .clickable(onClick = onAbandon)
-                    .padding(4.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
     }
@@ -1218,10 +1222,10 @@ private fun DeviceRow(name: String, onClick: () -> Unit) {
         fontSize = 13.sp,
         textAlign = TextAlign.Center,
         modifier = Modifier
+            .fillMaxWidth()
             .clickable(onClick = onClick)
             .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .fillMaxWidth(),
+            .padding(horizontal = 12.dp, vertical = 12.dp),
     )
     Spacer(Modifier.height(4.dp))
 }

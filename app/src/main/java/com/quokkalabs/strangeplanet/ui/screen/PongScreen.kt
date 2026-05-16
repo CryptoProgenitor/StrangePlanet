@@ -31,10 +31,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -259,7 +266,13 @@ fun PongScreen(
 
                 // Phase overlays
                 when (state.phase) {
-                    GamePhase.READY -> ReadyOverlay(
+                    GamePhase.READY -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                        )
+                        ReadyOverlay(
                         gameMode = state.gameMode,
                         onModeSelected = { viewModel.selectMode(it) },
                         onConfigure = { showSettings = true },
@@ -303,6 +316,7 @@ fun PongScreen(
                         onDifficulty = { viewModel.setDifficulty(it) },
                         modifier = Modifier.align(Alignment.Center),
                     )
+                    }
 
                     GamePhase.GAME_OVER -> GameOverOverlay(
                         playerWon = state.playerScore > state.aiScore,
@@ -896,12 +910,13 @@ private fun ReadyOverlay(
         if (lobbyStep == 1) {
             Text(
                 "← Setup",
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .align(Alignment.Start)
                     .clickable { lobbyStep = 0 }
-                    .padding(vertical = 4.dp),
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
             )
             Spacer(Modifier.height(10.dp))
 
@@ -928,14 +943,14 @@ private fun ReadyOverlay(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             "Abandon Endeavour",
-            color = Color.White.copy(alpha = 0.55f),
-            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 13.sp,
             modifier = Modifier
                 .clickable(onClick = onAbandon)
-                .padding(4.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         )
     }
 }
@@ -1003,13 +1018,13 @@ private fun BluetoothLobby(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier
+                                .fillMaxWidth()
                                 .clickable { onConnect(last.address) }
                                 .background(
                                     AlienPink.copy(alpha = 0.15f),
                                     RoundedCornerShape(8.dp),
                                 )
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                                .fillMaxWidth(),
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(12.dp))
@@ -1080,7 +1095,7 @@ private fun BluetoothLobby(
                                     Color.White.copy(alpha = 0.08f),
                                     RoundedCornerShape(8.dp),
                                 )
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .padding(horizontal = 12.dp, vertical = 12.dp)
                                 .fillMaxWidth(),
                             textAlign = TextAlign.Center,
                         )
@@ -1199,7 +1214,7 @@ private fun OnlineLobby(
                     )
                     Spacer(Modifier.height(6.dp))
 
-                    // Simple 4-character code input
+                    // Visual code display
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1208,7 +1223,7 @@ private fun OnlineLobby(
                             val char = joinCode.getOrNull(idx)?.toString() ?: ""
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(44.dp)
                                     .background(
                                         Color.White.copy(alpha = 0.1f),
                                         RoundedCornerShape(8.dp),
@@ -1218,73 +1233,44 @@ private fun OnlineLobby(
                                 Text(
                                     text = char,
                                     color = AlienPink,
-                                    fontSize = 20.sp,
+                                    fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
                             }
                         }
                     }
+                    Spacer(Modifier.height(10.dp))
+
+                    // System IME input
+                    OutlinedTextField(
+                        value = joinCode,
+                        onValueChange = { new ->
+                            val filtered = new.uppercase().filter { it.isLetter() }
+                            if (filtered.length <= CODE_LENGTH) joinCode = filtered
+                        },
+                        singleLine = true,
+                        label = { Text("Room Code", fontSize = 12.sp) },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Ascii,
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { if (joinCode.length == CODE_LENGTH) onJoin(joinCode) },
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = AlienPink,
+                            unfocusedTextColor = AlienPink,
+                            focusedBorderColor = AlienPink,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                            focusedLabelColor = AlienPink,
+                            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
                     Spacer(Modifier.height(8.dp))
-
-                    // Letter buttons (keyboard)
-                    val letters = "ABCDEFGHJKLMNPQRSTUVWXYZ"
-                    letters.chunked(8).forEach { row ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            modifier = Modifier.padding(vertical = 2.dp),
-                        ) {
-                            row.forEach { letter ->
-                                Text(
-                                    text = letter.toString(),
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .background(
-                                            Color.White.copy(alpha = 0.12f),
-                                            RoundedCornerShape(4.dp),
-                                        )
-                                        .clickable {
-                                            if (joinCode.length < CODE_LENGTH) {
-                                                joinCode += letter
-                                            }
-                                        }
-                                        .padding(top = 4.dp),
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "Clear",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 12.sp,
-                            modifier = Modifier
-                                .background(
-                                    Color.White.copy(alpha = 0.08f),
-                                    RoundedCornerShape(8.dp),
-                                )
-                                .clickable { joinCode = "" }
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                        )
-                        if (joinCode.isNotEmpty()) {
-                            Text(
-                                text = "⌫",
-                                color = Color.White.copy(alpha = 0.6f),
-                                fontSize = 14.sp,
-                                modifier = Modifier
-                                    .background(
-                                        Color.White.copy(alpha = 0.08f),
-                                        RoundedCornerShape(8.dp),
-                                    )
-                                    .clickable { joinCode = joinCode.dropLast(1) }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                            )
-                        }
                         if (joinCode.length == CODE_LENGTH) {
                             Text(
                                 text = "Connect",
@@ -1297,7 +1283,7 @@ private fun OnlineLobby(
                                         RoundedCornerShape(8.dp),
                                     )
                                     .clickable { onJoin(joinCode) }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
                             )
                         }
                     }
@@ -1305,11 +1291,11 @@ private fun OnlineLobby(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text = "Back",
-                        color = Color.White.copy(alpha = 0.4f),
-                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
                         modifier = Modifier
                             .clickable { showJoinInput = false; joinCode = "" }
-                            .padding(4.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                     )
                 }
             }

@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -479,9 +482,11 @@ private fun BoxScope.AsteroidSettingsPanel(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.86f)
+                .widthIn(max = 340.dp)
+                .fillMaxWidth(0.9f)
                 .background(DeepNavy.copy(alpha = 0.96f), RoundedCornerShape(20.dp))
                 .clickable(enabled = false) {}
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -718,8 +723,11 @@ private fun BoxScope.CenterBanner(title: String, subtitle: String, onAbandon: ((
     Column(
         modifier = Modifier
             .align(Alignment.Center)
+            .widthIn(max = 340.dp)
+            .fillMaxWidth(0.9f)
             .background(DeepNavy.copy(alpha = 0.88f), RoundedCornerShape(20.dp))
-            .padding(horizontal = 32.dp, vertical = 24.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -732,7 +740,7 @@ private fun BoxScope.CenterBanner(title: String, subtitle: String, onAbandon: ((
         Spacer(Modifier.height(8.dp))
         Text(
             subtitle,
-            color = Color.White.copy(alpha = 0.65f),
+            color = Color.White.copy(alpha = 0.75f),
             fontSize = 13.sp,
             textAlign = TextAlign.Center,
         )
@@ -740,11 +748,11 @@ private fun BoxScope.CenterBanner(title: String, subtitle: String, onAbandon: ((
             Spacer(Modifier.height(16.dp))
             Text(
                 "Abandon Endeavour",
-                color = Color.White.copy(alpha = 0.55f),
-                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 13.sp,
                 modifier = Modifier
                     .clickable(onClick = onAbandon)
-                    .padding(4.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
     }

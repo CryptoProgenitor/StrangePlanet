@@ -20,11 +20,15 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
@@ -101,8 +105,9 @@ fun StrangeMatchScreen(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val screenWidthPx = with(density) { maxWidth.toPx() }
             val screenHeightPx = with(density) { maxHeight.toPx() }
+            val gridHPadPx = with(density) { 24.dp.toPx() } // 12dp each side
             val cellSizePx = minOf(
-                screenWidthPx / SM_COLS,
+                (screenWidthPx - gridHPadPx) / SM_COLS,
                 screenHeightPx * 0.78f / SM_ROWS,
             )
             val cellSizeDp = with(density) { cellSizePx.toDp() }
@@ -130,7 +135,8 @@ fun StrangeMatchScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = 140.dp, bottom = 16.dp),
+                    .padding(horizontal = 12.dp, top = 140.dp)
+                    .windowInsetsPadding(WindowInsets.navigationBars),
                 contentAlignment = Alignment.Center,
             ) {
                 if (state.grid.isNotEmpty()) {
@@ -300,10 +306,10 @@ private fun TileCell(
             Text(
                 text = "✦",
                 color = Color.Yellow,
-                fontSize = 9.sp,
+                fontSize = 11.sp,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(1.dp),
+                    .padding(2.dp),
             )
         }
     }
@@ -324,8 +330,10 @@ private fun BoxScope.SmCenterBanner(
     ) {
         Column(
             modifier = Modifier
+                .widthIn(max = 340.dp)
+                .fillMaxWidth(0.9f)
                 .background(DeepNavy.copy(alpha = 0.88f), RoundedCornerShape(20.dp))
-                .padding(horizontal = 32.dp, vertical = 24.dp)
+                .padding(horizontal = 28.dp, vertical = 24.dp)
                 .clickable(enabled = false) {},
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -347,11 +355,11 @@ private fun BoxScope.SmCenterBanner(
                 Spacer(Modifier.height(16.dp))
                 Text(
                     "Abandon Endeavour",
-                    color = Color.White.copy(alpha = 0.55f),
-                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 13.sp,
                     modifier = Modifier
                         .clickable(onClick = onAbandon)
-                        .padding(4.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                 )
             }
         }

@@ -55,7 +55,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -81,6 +84,11 @@ fun SpaceInvadersScreen(
     val density = LocalDensity.current
     val view = LocalView.current
     val context = LocalContext.current
+
+    BackHandler {
+        viewModel.resetGame()
+        onBack()
+    }
 
     // Screen off / app backgrounded → suspend play.
     PauseOnBackground { viewModel.pauseGame() }
@@ -343,11 +351,14 @@ fun SpaceInvadersScreen(
                     Column(
                         modifier = Modifier
                             .align(Alignment.Center)
+                            .widthIn(max = 340.dp)
+                            .fillMaxWidth(0.9f)
                             .background(
                                 DeepNavy.copy(alpha = 0.85f),
                                 RoundedCornerShape(20.dp),
                             )
-                            .padding(36.dp),
+                            .verticalScroll(rememberScrollState())
+                            .padding(28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
@@ -360,27 +371,27 @@ fun SpaceInvadersScreen(
                         Spacer(Modifier.height(12.dp))
                         Text(
                             "Hostile creatures descend\nfrom the upper atmosphere.\n\nNeutralise them with your\nprojection device.",
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = Color.White.copy(alpha = 0.7f),
                             fontSize = 13.sp,
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "Slide to aim · auto-fire active",
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = Color.White.copy(alpha = 0.7f),
                             fontSize = 13.sp,
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Tap anywhere to commence",
-                            color = AlienPink.copy(alpha = 0.7f),
+                            color = AlienPink.copy(alpha = 0.85f),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Spacer(Modifier.height(14.dp))
                         Text(
                             "Configure Parameters",
-                            color = AlienPink.copy(alpha = 0.7f),
+                            color = AlienPink.copy(alpha = 0.85f),
                             fontSize = 13.sp,
                             modifier = Modifier
                                 .clickable { showSettings = true }
@@ -388,16 +399,16 @@ fun SpaceInvadersScreen(
                                     Color.White.copy(alpha = 0.08f),
                                     RoundedCornerShape(10.dp),
                                 )
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
                         )
                         Spacer(Modifier.height(14.dp))
                         Text(
                             "Abandon Endeavour",
-                            color = Color.White.copy(alpha = 0.55f),
-                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 13.sp,
                             modifier = Modifier
                                 .clickable { viewModel.resetGame(); onBack() }
-                                .padding(4.dp),
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                     }
                 }
@@ -412,11 +423,14 @@ fun SpaceInvadersScreen(
                     Column(
                         modifier = Modifier
                             .align(Alignment.Center)
+                            .widthIn(max = 340.dp)
+                            .fillMaxWidth(0.9f)
                             .background(
                                 DeepNavy.copy(alpha = 0.85f),
                                 RoundedCornerShape(20.dp),
                             )
-                            .padding(36.dp),
+                            .verticalScroll(rememberScrollState())
+                            .padding(28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
@@ -453,9 +467,10 @@ fun SpaceInvadersScreen(
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "Tap for another attempt",
-                            color = Color.White.copy(alpha = 0.5f),
+                            "Tap anywhere to attempt again",
+                            color = AlienPink.copy(alpha = 0.85f),
                             fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
                     }
                 }
@@ -499,11 +514,14 @@ fun SpaceInvadersScreen(
                     Column(
                         modifier = Modifier
                             .align(Alignment.Center)
+                            .widthIn(max = 340.dp)
+                            .fillMaxWidth(0.9f)
                             .background(
                                 DeepNavy.copy(alpha = 0.85f),
                                 RoundedCornerShape(20.dp),
                             )
-                            .padding(36.dp),
+                            .verticalScroll(rememberScrollState())
+                            .padding(28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
@@ -543,12 +561,12 @@ fun SpaceInvadersScreen(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(top = 24.dp, start = 12.dp)
-                        .size(36.dp),
+                        .size(48.dp),
                     shape = CircleShape,
                     containerColor = AlienPink.copy(alpha = 0.5f),
                     contentColor = DeepNavy,
                 ) {
-                    Text("←", fontSize = 14.sp)
+                    Text("←", fontSize = 18.sp)
                 }
 
                 // ── Pause button (during gameplay) ─────────────────────────
@@ -557,13 +575,13 @@ fun SpaceInvadersScreen(
                         onClick = { viewModel.pauseGame() },
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(top = 24.dp, start = 54.dp)
-                            .size(36.dp),
+                            .padding(top = 24.dp, start = 68.dp)
+                            .size(48.dp),
                         shape = CircleShape,
                         containerColor = AlienPink.copy(alpha = 0.5f),
                         contentColor = DeepNavy,
                     ) {
-                        Text("⏸", fontSize = 14.sp)
+                        Text("⏸", fontSize = 18.sp)
                     }
                 }
 
@@ -574,12 +592,12 @@ fun SpaceInvadersScreen(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(top = 24.dp, end = 12.dp)
-                            .size(36.dp),
+                            .size(48.dp),
                         shape = CircleShape,
                         containerColor = AlienPink.copy(alpha = 0.5f),
                         contentColor = DeepNavy,
                     ) {
-                        Text("⚙", fontSize = 16.sp)
+                        Text("⚙", fontSize = 20.sp)
                     }
                 }
 
@@ -619,10 +637,11 @@ private fun SISettingsModal(
     ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 320.dp)
-                .fillMaxWidth(0.85f)
+                .widthIn(max = 340.dp)
+                .fillMaxWidth(0.9f)
                 .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
                 .clickable { /* consume */ }
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

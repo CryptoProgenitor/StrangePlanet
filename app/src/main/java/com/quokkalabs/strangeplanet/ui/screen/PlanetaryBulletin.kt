@@ -2,6 +2,7 @@ package com.quokkalabs.strangeplanet.ui.screen
 
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,12 +65,14 @@ fun PlanetaryBulletin(
         packageInfo.versionCode.toLong()
     }
 
-    // Full-screen scrim — blocks touches on underlying content
+    BackHandler { onDismiss() }
+
+    // Full-screen scrim — tapping the scrim dismisses the bulletin
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.6f))
-            .clickable { /* consume */ }
+            .clickable { onDismiss() }
             .windowInsetsPadding(WindowInsets.navigationBars),
         contentAlignment = Alignment.Center,
     ) {
