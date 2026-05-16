@@ -145,7 +145,7 @@ fun PlanetaryBulletin(
             BulletinCard(
                 emoji = "🍬",
                 title = "Strange Match",
-                subtitle = if (strangeMatchHighScore > 0) "Record: $strangeMatchHighScore sustenance"
+                subtitle = if (strangeMatchHighScore > 0) "Record: $strangeMatchHighScore matches"
                     else "Swap strange beings; match 3 or more",
                 onClick = onNavigateToStrangeMatch,
             )
