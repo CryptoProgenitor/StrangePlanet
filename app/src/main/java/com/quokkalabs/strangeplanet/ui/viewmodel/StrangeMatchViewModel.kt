@@ -54,6 +54,17 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun onSwipeTo(fromRow: Int, fromCol: Int, toRow: Int, toCol: Int) {
+        val s = _state.value
+        if (s.phase != StrangeMatchPhase.PLAYING) return
+        if (toRow !in 0 until SM_ROWS || toCol !in 0 until SM_COLS) return
+        val from = fromRow to fromCol
+        val to = toRow to toCol
+        if (!StrangeMatchEngine.isAdjacent(from, to)) return
+        _state.update { it.copy(selectedCell = null, phase = StrangeMatchPhase.ANIMATING) }
+        viewModelScope.launch { doSwap(from, to) }
+    }
+
     private suspend fun doSwap(a: Pair<Int, Int>, b: Pair<Int, Int>) {
         val s = _state.value
         val swapped = StrangeMatchEngine.swap(s.grid, a, b)

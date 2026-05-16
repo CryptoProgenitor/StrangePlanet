@@ -10,6 +10,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.awaitPointerEvent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -35,8 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import kotlin.math.abs
+import kotlin.math.hypot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -146,7 +152,30 @@ fun StrangeMatchScreen(
                                         modifier = Modifier
                                             .size(cellSizeDp)
                                             .padding(2.dp)
-                                            .clickable { viewModel.onCellTapped(row, col) },
+                                            .pointerInput(row, col) {
+                                                val swipeMin = 18.dp.toPx()
+                                                awaitEachGesture {
+                                                    awaitFirstDown(requireUnconsumed = false)
+                                                    var dx = 0f; var dy = 0f
+                                                    while (true) {
+                                                        val event = awaitPointerEvent()
+                                                        val ch = event.changes.firstOrNull() ?: break
+                                                        dx += ch.positionChange().x
+                                                        dy += ch.positionChange().y
+                                                        ch.consume()
+                                                        if (!ch.pressed) break
+                                                    }
+                                                    if (hypot(dx, dy) < swipeMin) {
+                                                        viewModel.onCellTapped(row, col)
+                                                    } else {
+                                                        val (dr, dc) = if (abs(dx) > abs(dy))
+                                                            0 to if (dx > 0) 1 else -1
+                                                        else
+                                                            if (dy > 0) 1 to 0 else -1 to 0
+                                                        viewModel.onSwipeTo(row, col, row + dr, col + dc)
+                                                    }
+                                                }
+                                            },
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         if (tile != null) {
