@@ -34,10 +34,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -301,6 +305,41 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
         radius = r,
         center = center,
     )
+
+    // Tier-specific surface detail, clipped to the orb so nothing spills.
+    val orbPath = Path().apply {
+        addOval(Rect(o.x - r, o.y - r, o.x + r, o.y + r))
+    }
+    clipPath(orbPath) {
+        when (o.tier) {
+            MergeTier.DUST_MOTE, MergeTier.PEBBLE, MergeTier.BOULDER,
+            MergeTier.MOONLET, MergeTier.MOON -> drawCraters(o, r, base, alphaMul)
+            MergeTier.STRANGE_PLANET -> drawPlanetFeatures(o, r, base, alphaMul)
+            MergeTier.GAS_GIANT -> drawGasGiant(o, r, base, alphaMul)
+            MergeTier.STAR -> drawStarSurface(o, r, alphaMul)
+            MergeTier.NEUTRON_STAR -> drawNeutronCore(o, r, alphaMul)
+            else -> {}
+        }
+    }
+
+    // Terminator shadow (light comes from the top-left)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color.Transparent, Color.Transparent, darken(base).copy(alpha = 0.5f * alphaMul)),
+            center = Offset(o.x - r * 0.3f, o.y - r * 0.3f),
+            radius = r * 1.35f,
+        ),
+        radius = r,
+        center = center,
+    )
+
+    // Specular highlight
+    drawCircle(
+        color = Color.White.copy(alpha = 0.22f * alphaMul),
+        radius = r * 0.22f,
+        center = Offset(o.x - r * 0.38f, o.y - r * 0.38f),
+    )
+
     // Rim
     drawCircle(
         color = darken(base).copy(alpha = 0.5f * alphaMul),
@@ -308,6 +347,115 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
         center = center,
         style = Stroke(width = r * 0.06f),
     )
+}
+
+/** Deterministic 0..1 hash so an orb's surface stays stable across frames. */
+private fun hash01(seed: Long, i: Int): Float {
+    var h = seed * -0x61c8864680b583ebL + i * -0x7a143595L
+    h = (h xor (h ushr 15)) * -0x3d4d51c2d82b14b1L
+    h = h xor (h ushr 13)
+    return (h and 0xFFFFL).toFloat() / 65535f
+}
+
+private fun DrawScope.drawCraters(o: Orb, r: Float, base: Color, a: Float) {
+    // Soft mottling
+    for (i in 0 until 4) {
+        val ang = hash01(o.id, i + 200) * 6.2832f
+        val dd = hash01(o.id, i + 250) * r * 0.65f
+        drawCircle(
+            color = darken(base).copy(alpha = 0.16f * a),
+            radius = r * (0.12f + hash01(o.id, i + 300) * 0.16f),
+            center = Offset(o.x + cos(ang) * dd, o.y + sin(ang) * dd),
+        )
+    }
+    // Craters: shadowed pit + sunlit rim crescent
+    for (i in 0 until 5) {
+        val ang = hash01(o.id, i) * 6.2832f
+        val dd = (0.12f + hash01(o.id, i + 50) * 0.58f) * r
+        val cr = (0.09f + hash01(o.id, i + 100) * 0.15f) * r
+        val cx = o.x + cos(ang) * dd
+        val cy = o.y + sin(ang) * dd
+        drawCircle(darken(base).copy(alpha = 0.55f * a), cr, Offset(cx, cy))
+        drawCircle(
+            color = lighten(base).copy(alpha = 0.5f * a),
+            radius = cr,
+            center = Offset(cx - cr * 0.26f, cy - cr * 0.26f),
+            style = Stroke(width = cr * 0.32f),
+        )
+    }
+}
+
+private fun DrawScope.drawGasGiant(o: Orb, r: Float, base: Color, a: Float) {
+    val bands = 7
+    for (i in 0 until bands) {
+        val fy = (i + 0.5f) / bands
+        val yy = o.y - r + fy * 2f * r
+        val bandH = (2f * r / bands) * 1.18f
+        val shade = if (i % 2 == 0) lighten(base) else darken(base)
+        drawRect(
+            color = shade.copy(alpha = 0.42f * a),
+            topLeft = Offset(o.x - r, yy - bandH / 2f),
+            size = Size(2f * r, bandH),
+        )
+    }
+    // The Great Red Spot
+    val sx = o.x + r * 0.30f
+    val sy = o.y + r * 0.22f
+    drawOval(
+        color = Color(0xFFC4452F).copy(alpha = 0.85f * a),
+        topLeft = Offset(sx - r * 0.30f, sy - r * 0.20f),
+        size = Size(r * 0.60f, r * 0.40f),
+    )
+    drawOval(
+        color = Color(0xFFE8884A).copy(alpha = 0.6f * a),
+        topLeft = Offset(sx - r * 0.17f, sy - r * 0.11f),
+        size = Size(r * 0.34f, r * 0.22f),
+    )
+}
+
+private fun DrawScope.drawPlanetFeatures(o: Orb, r: Float, base: Color, a: Float) {
+    // Lighter "landmass" blobs
+    for (i in 0 until 5) {
+        val ang = hash01(o.id, i + 10) * 6.2832f
+        val dd = hash01(o.id, i + 60) * r * 0.68f
+        val br = r * (0.20f + hash01(o.id, i + 110) * 0.26f)
+        drawCircle(
+            color = lighten(base).copy(alpha = 0.32f * a),
+            radius = br,
+            center = Offset(o.x + cos(ang) * dd, o.y + sin(ang) * dd),
+        )
+    }
+    // High cloud streak
+    drawOval(
+        color = Color.White.copy(alpha = 0.13f * a),
+        topLeft = Offset(o.x - r, o.y - r * 0.16f),
+        size = Size(2f * r, r * 0.34f),
+    )
+}
+
+private fun DrawScope.drawStarSurface(o: Orb, r: Float, a: Float) {
+    drawCircle(
+        color = Color(0xFFFFF3C4).copy(alpha = 0.5f * a),
+        radius = r * 0.6f,
+        center = Offset(o.x - r * 0.12f, o.y - r * 0.12f),
+    )
+    for (i in 0 until 6) {
+        val ang = hash01(o.id, i + 20) * 6.2832f
+        val dd = hash01(o.id, i + 70) * r * 0.72f
+        val sr = r * (0.10f + hash01(o.id, i + 120) * 0.14f)
+        val hot = i % 2 == 0
+        drawCircle(
+            color = (if (hot) Color.White else Color(0xFFE8932B))
+                .copy(alpha = (if (hot) 0.5f else 0.35f) * a),
+            radius = sr,
+            center = Offset(o.x + cos(ang) * dd, o.y + sin(ang) * dd),
+        )
+    }
+}
+
+private fun DrawScope.drawNeutronCore(o: Orb, r: Float, a: Float) {
+    drawCircle(Color.White.copy(alpha = 0.85f * a), r * 0.42f, Offset(o.x, o.y))
+    drawCircle(Color(0xFFCBE9FF).copy(alpha = 0.55f * a), r * 0.70f, Offset(o.x, o.y))
 }
 
 private fun DrawScope.drawPop(p: Pop) {
