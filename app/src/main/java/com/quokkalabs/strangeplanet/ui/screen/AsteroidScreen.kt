@@ -25,11 +25,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -82,6 +87,21 @@ fun AsteroidScreen(
     val context = LocalContext.current
 
     var showSettings by remember { mutableStateOf(false) }
+
+    var scorePopupText by remember { mutableStateOf("") }
+    var showScorePopup by remember { mutableStateOf(false) }
+    var prevScore by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(state.score) {
+        val gain = state.score - prevScore
+        prevScore = state.score
+        if (gain > 0 && state.phase == AsteroidPhase.PLAYING) {
+            scorePopupText = "+$gain"
+            showScorePopup = true
+            kotlinx.coroutines.delay(900)
+            showScorePopup = false
+        }
+    }
 
     DisposableEdgeToEdge(view)
 
@@ -281,6 +301,22 @@ fun AsteroidScreen(
                 HudStat("ATTEMPTS", state.lives.coerceAtLeast(0).toString())
             }
 
+            AnimatedVisibility(
+                visible = showScorePopup,
+                enter = fadeIn(tween(120)),
+                exit = fadeOut(tween(400)),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 136.dp),
+            ) {
+                Text(
+                    scorePopupText,
+                    color = AlienPink,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
             when (state.phase) {
                 AsteroidPhase.READY -> CenterBanner(
                     "SPATIAL DEBRIS AVOIDANCE",
@@ -345,9 +381,11 @@ fun AsteroidScreen(
             val thrust = ControlAction("▲", "THRUST",
                 { viewModel.setInput { it.copy(thrust = true) } },
                 { viewModel.setInput { it.copy(thrust = false) } })
+            val hyperOnCooldown = (state.ship?.hyperspaceCooldown ?: 0) > 0
             val hyper = ControlAction("✦", "HYPER",
                 { viewModel.setInput { it.copy(hyperspace = true) } },
-                { viewModel.setInput { it.copy(hyperspace = false) } })
+                { viewModel.setInput { it.copy(hyperspace = false) } },
+                dimmed = hyperOnCooldown)
             val fire = ControlAction("●", "FIRE",
                 { viewModel.setInput { it.copy(fire = true) } },
                 { viewModel.setInput { it.copy(fire = false) } })
@@ -372,6 +410,7 @@ fun AsteroidScreen(
                         glyph = c.glyph,
                         caption = c.caption,
                         modifier = Modifier.weight(1f),
+                        dimmed = c.dimmed,
                         onPress = c.onPress,
                         onRelease = c.onRelease,
                     )
@@ -395,7 +434,11 @@ fun AsteroidScreen(
                 Text("⚙", fontSize = 20.sp)
             }
 
-            if (showSettings) {
+            AnimatedVisibility(
+                visible = showSettings,
+                enter = fadeIn(tween(150)),
+                exit = fadeOut(tween(150)),
+            ) {
                 AsteroidSettingsPanel(
                     soundEnabled = settings.soundEnabled,
                     altLayout = settings.altLayout,
@@ -416,6 +459,7 @@ private data class ControlAction(
     val caption: String,
     val onPress: () -> Unit,
     val onRelease: () -> Unit,
+    val dimmed: Boolean = false,
 )
 
 @Composable
@@ -610,6 +654,7 @@ private fun HoldButton(
     modifier: Modifier,
     onPress: () -> Unit,
     onRelease: () -> Unit,
+    dimmed: Boolean = false,
 ) {
     // rememberUpdatedState keeps the gesture coroutine stable while always
     // invoking the *current* handlers — without this, pointerInput(Unit)
@@ -634,13 +679,13 @@ private fun HoldButton(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 glyph,
-                color = AlienPink,
+                color = AlienPink.copy(alpha = if (dimmed) 0.35f else 1f),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 caption,
-                color = Color.White.copy(alpha = 0.6f),
+                color = Color.White.copy(alpha = if (dimmed) 0.25f else 0.6f),
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -695,7 +740,7 @@ private fun BoxScope.CenterBanner(title: String, subtitle: String, onAbandon: ((
             Spacer(Modifier.height(16.dp))
             Text(
                 "Abandon Endeavour",
-                color = Color.White.copy(alpha = 0.35f),
+                color = Color.White.copy(alpha = 0.55f),
                 fontSize = 12.sp,
                 modifier = Modifier
                     .clickable(onClick = onAbandon)

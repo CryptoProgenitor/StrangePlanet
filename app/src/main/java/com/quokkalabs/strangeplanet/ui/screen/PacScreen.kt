@@ -12,6 +12,9 @@ import android.os.VibratorManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -50,6 +53,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -176,6 +180,21 @@ fun PacScreen(
     val swipeThreshold = with(density) { 24.dp.toPx() }
 
     var showSettings by remember { mutableStateOf(false) }
+
+    var scorePopupText by remember { mutableStateOf("") }
+    var showScorePopup by remember { mutableStateOf(false) }
+    var prevPacScore by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(state.score) {
+        val gain = state.score - prevPacScore
+        prevPacScore = state.score
+        if (gain > 0 && state.phase == PacPhase.PLAYING) {
+            scorePopupText = "+$gain"
+            showScorePopup = true
+            kotlinx.coroutines.delay(800)
+            showScorePopup = false
+        }
+    }
 
     // Linear clock (radians) — each sock derives its own phase offset so the
     // halos pulse out of sync with one another.
@@ -389,6 +408,14 @@ fun PacScreen(
                         ),
                         dstSize = IntSize(bSz, bSz),
                     )
+
+                    // Swipe direction indicator: subtle dot ahead of being.
+                    if (!settings.joypadEnabled && b.dir != PacDir.NONE) {
+                        val dotX = bx + b.dir.dc * ts * 1.6f
+                        val dotY = by + b.dir.dr * ts * 1.6f
+                        drawCircle(AlienPink.copy(alpha = 0.55f), ts * 0.18f, Offset(dotX, dotY))
+                        drawCircle(AlienPink.copy(alpha = 0.25f), ts * 0.32f, Offset(dotX, dotY))
+                    }
                 }
 
                 // HUD — full deadpan terminology
@@ -500,6 +527,22 @@ fun PacScreen(
                     }
                 }
 
+                AnimatedVisibility(
+                    visible = showScorePopup,
+                    enter = fadeIn(tween(100)),
+                    exit = fadeOut(tween(400)),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 136.dp),
+                ) {
+                    Text(
+                        scorePopupText,
+                        color = AlienPink,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
                 when (state.phase) {
                     PacPhase.READY -> PacLobby(
                         btLobbyActive = btLobbyActive,
@@ -581,7 +624,11 @@ fun PacScreen(
                 }
             }
 
-            if (showSettings) {
+            AnimatedVisibility(
+                visible = showSettings,
+                enter = fadeIn(tween(150)),
+                exit = fadeOut(tween(150)),
+            ) {
                 PacSettingsPanel(
                     settings = settings,
                     onAvatar = viewModel::setAvatar,
@@ -935,7 +982,7 @@ private fun PacLobby(
             Spacer(Modifier.height(16.dp))
             Text(
                 "Abandon Endeavour",
-                color = Color.White.copy(alpha = 0.35f),
+                color = Color.White.copy(alpha = 0.55f),
                 fontSize = 12.sp,
                 modifier = Modifier
                     .clickable(onClick = onAbandon)

@@ -46,6 +46,12 @@ fun PlanetaryBulletin(
     val packageInfo = remember {
         context.packageManager.getPackageInfo(context.packageName, 0)
     }
+    val asteroidHighScore = remember {
+        context.getSharedPreferences("asteroid_prefs", 0).getInt("high_score", 0)
+    }
+    val pacHighScore = remember {
+        context.getSharedPreferences("pac_prefs", 0).getInt("high_score", 0)
+    }
     val versionName = packageInfo.versionName ?: "?"
     val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         packageInfo.longVersionCode
@@ -135,7 +141,8 @@ fun PlanetaryBulletin(
             BulletinCard(
                 emoji = "🟡",
                 title = "Sustenance Pursuit",
-                subtitle = "Consume stars; evade perished beings",
+                subtitle = if (pacHighScore > 0) "Record: $pacHighScore sustenance"
+                    else "Consume stars; evade perished beings",
                 onClick = onNavigateToPacman,
             )
 
@@ -144,7 +151,8 @@ fun PlanetaryBulletin(
             BulletinCard(
                 emoji = "🌀",
                 title = "Spatial Debris Avoidance",
-                subtitle = "Neutralise drifting fabric tubes",
+                subtitle = if (asteroidHighScore > 0) "Record: $asteroidHighScore debris neutralised"
+                    else "Neutralise drifting fabric tubes",
                 onClick = onNavigateToAsteroids,
             )
 

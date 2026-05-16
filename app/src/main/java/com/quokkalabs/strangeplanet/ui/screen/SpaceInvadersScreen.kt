@@ -24,6 +24,10 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -362,9 +366,16 @@ fun SpaceInvadersScreen(
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "Tap to commence",
+                            "Slide to aim · auto-fire active",
                             color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 13.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Tap anywhere to commence",
+                            color = AlienPink.copy(alpha = 0.7f),
                             fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
                         Spacer(Modifier.height(14.dp))
                         Text(
@@ -382,7 +393,7 @@ fun SpaceInvadersScreen(
                         Spacer(Modifier.height(14.dp))
                         Text(
                             "Abandon Endeavour",
-                            color = Color.White.copy(alpha = 0.35f),
+                            color = Color.White.copy(alpha = 0.55f),
                             fontSize = 12.sp,
                             modifier = Modifier
                                 .clickable { viewModel.resetGame(); onBack() }
@@ -573,7 +584,11 @@ fun SpaceInvadersScreen(
                 }
 
                 // ── Settings modal ─────────────────────────────────────────
-                if (showSettings) {
+                AnimatedVisibility(
+                    visible = showSettings,
+                    enter = fadeIn(tween(150)),
+                    exit = fadeOut(tween(150)),
+                ) {
                     SISettingsModal(
                         settings = siSettings,
                         onSoundToggle = { viewModel.setSoundEnabled(it) },

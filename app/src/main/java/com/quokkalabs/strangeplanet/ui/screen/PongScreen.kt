@@ -35,6 +35,10 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -295,6 +299,8 @@ fun PongScreen(
                         onOnlineCreate = { viewModel.onlineCreateRoom() },
                         onOnlineJoin = { viewModel.onlineJoinRoom(it) },
                         onOnlineDisconnect = { viewModel.onlineDisconnect() },
+                        difficulty = settings.difficulty,
+                        onDifficulty = { viewModel.setDifficulty(it) },
                         modifier = Modifier.align(Alignment.Center),
                     )
 
@@ -355,8 +361,8 @@ fun PongScreen(
                             SayingOverlay(
                                 text = "Frequency link lost!",
                                 modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .offset(y = (-60).dp),
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 72.dp),
                             )
                         }
                     }
@@ -476,7 +482,11 @@ fun PongScreen(
                 }
 
                 // Settings modal
-                if (showSettings) {
+                AnimatedVisibility(
+                    visible = showSettings,
+                    enter = fadeIn(tween(150)),
+                    exit = fadeOut(tween(150)),
+                ) {
                     SettingsModal(
                         settings = settings,
                         onSoundToggle = { viewModel.setSoundEnabled(it) },
@@ -669,8 +679,13 @@ private fun ReadyOverlay(
     onOnlineCreate: () -> Unit = {},
     onOnlineJoin: (String) -> Unit = {},
     onOnlineDisconnect: () -> Unit = {},
+    difficulty: DifficultyLevel = DifficultyLevel.STANDARD,
+    onDifficulty: (DifficultyLevel) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var lobbyStep by remember { mutableStateOf(0) }
+    LaunchedEffect(gameMode) { lobbyStep = 0 }
+
     val scrollState = rememberScrollState()
     Column(
         modifier = modifier
@@ -689,6 +704,9 @@ private fun ReadyOverlay(
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(14.dp))
+
+        if (lobbyStep == 0) {
+        // ── Step 0: Mode + creature + difficulty setup ────────────────────
 
         // Mode selector
         Text(
@@ -731,6 +749,7 @@ private fun ReadyOverlay(
         }
 
         Spacer(Modifier.height(12.dp))
+        } // end lobbyStep == 0 mode block
 
         // Creature picker(s)
         val isBtClient = gameMode == GameMode.BLUETOOTH &&
@@ -744,106 +763,150 @@ private fun ReadyOverlay(
             (gameMode == GameMode.BLUETOOTH && !isBtClient) ||
             (gameMode == GameMode.ONLINE && !isOnlineClient)
 
-        if (isRemoteClient) {
-            // Client: host picks creatures
-            Text(
-                "The host being\nselects creatures.",
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-            )
-        } else {
-            Text(
-                if (showSecondPicker) "Your being:" else "Select your being:",
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 12.sp,
-            )
-            Spacer(Modifier.height(6.dp))
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CreaturePickerItem(
-                    drawableRes = R.drawable.sp_pong_player,
-                    selected = selectedCreature == R.drawable.sp_pong_player,
-                    onClick = { onSelectCreature(R.drawable.sp_pong_player) },
-                )
-                CreaturePickerItem(
-                    drawableRes = R.drawable.sp_pong_cat,
-                    selected = selectedCreature == R.drawable.sp_pong_cat,
-                    onClick = { onSelectCreature(R.drawable.sp_pong_cat) },
-                )
-                CreaturePickerItem(
-                    drawableRes = R.drawable.sp_pong_dog,
-                    selected = selectedCreature == R.drawable.sp_pong_dog,
-                    onClick = { onSelectCreature(R.drawable.sp_pong_dog) },
-                )
-            }
-
-            // Second picker: 2-player or BT host
-            if (showSecondPicker) {
-                Spacer(Modifier.height(8.dp))
+        // ── Step 0: creature picker, difficulty, configure ────────────────
+        if (lobbyStep == 0) {
+            if (isRemoteClient) {
                 Text(
-                    if (gameMode == GameMode.TWO_PLAYER) "Upper being:" else "Distant being:",
+                    "The host being\nselects creatures.",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                Text(
+                    if (showSecondPicker) "Your being:" else "Select your being:",
                     color = Color.White.copy(alpha = 0.5f),
                     fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(6.dp))
 
-                val allCreatures = listOf(
-                    R.drawable.sp_pong_player,
-                    R.drawable.sp_pong_cat,
-                    R.drawable.sp_pong_dog,
-                )
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    allCreatures.forEach { res ->
-                        CreaturePickerItem(
-                            drawableRes = res,
-                            selected = selectedPlayer2Creature == res,
-                            enabled = res != selectedCreature,
-                            onClick = { onSelectPlayer2Creature(res) },
-                        )
+                    CreaturePickerItem(
+                        drawableRes = R.drawable.sp_pong_player,
+                        selected = selectedCreature == R.drawable.sp_pong_player,
+                        onClick = { onSelectCreature(R.drawable.sp_pong_player) },
+                    )
+                    CreaturePickerItem(
+                        drawableRes = R.drawable.sp_pong_cat,
+                        selected = selectedCreature == R.drawable.sp_pong_cat,
+                        onClick = { onSelectCreature(R.drawable.sp_pong_cat) },
+                    )
+                    CreaturePickerItem(
+                        drawableRes = R.drawable.sp_pong_dog,
+                        selected = selectedCreature == R.drawable.sp_pong_dog,
+                        onClick = { onSelectCreature(R.drawable.sp_pong_dog) },
+                    )
+                }
+
+                if (showSecondPicker) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (gameMode == GameMode.TWO_PLAYER) "Upper being:" else "Distant being:",
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+
+                    val allCreatures = listOf(
+                        R.drawable.sp_pong_player,
+                        R.drawable.sp_pong_cat,
+                        R.drawable.sp_pong_dog,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        allCreatures.forEach { res ->
+                            CreaturePickerItem(
+                                drawableRes = res,
+                                selected = selectedPlayer2Creature == res,
+                                enabled = res != selectedCreature,
+                                onClick = { onSelectPlayer2Creature(res) },
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(10.dp))
 
-        // Configure button
-        Text(
-            text = "Configure Parameters",
-            color = Color.White.copy(alpha = if (isRemoteClient) 0.2f else 0.6f),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .background(
-                    Color.White.copy(alpha = if (isRemoteClient) 0.04f else 0.1f),
-                    RoundedCornerShape(10.dp),
-                )
-                .then(if (!isRemoteClient) Modifier.clickable { onConfigure() } else Modifier)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        if (isRemoteClient) {
-            Spacer(Modifier.height(4.dp))
+            // Configure button
             Text(
-                "Parameters governed\nby host being.",
-                color = Color.White.copy(alpha = 0.3f),
-                fontSize = 11.sp,
+                text = "Configure Parameters",
+                color = Color.White.copy(alpha = if (isRemoteClient) 0.2f else 0.6f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .background(
+                        Color.White.copy(alpha = if (isRemoteClient) 0.04f else 0.1f),
+                        RoundedCornerShape(10.dp),
+                    )
+                    .then(if (!isRemoteClient) Modifier.clickable { onConfigure() } else Modifier)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             )
+            if (isRemoteClient) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Parameters governed\nby host being.",
+                    color = Color.White.copy(alpha = 0.3f),
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            if (!isRemoteClient) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Intensity:",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    DifficultyLevel.entries.forEach { level ->
+                        val label = when (level) {
+                            DifficultyLevel.GENTLE -> "Gentle"
+                            DifficultyLevel.STANDARD -> "Standard"
+                            DifficultyLevel.AGGRESSIVE -> "Aggressive"
+                        }
+                        ModeButton(label, difficulty == level, Modifier.weight(1f)) {
+                            onDifficulty(level)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            if (gameMode == GameMode.SINGLE_PLAYER || gameMode == GameMode.TWO_PLAYER) {
+                LobbyButton("Commence Activity") { onCommence() }
+            } else {
+                LobbyButton("Continue →") { lobbyStep = 1 }
+            }
         }
 
-        Spacer(Modifier.height(14.dp))
+        // ── Step 1: multiplayer lobby ─────────────────────────────────────
+        if (lobbyStep == 1) {
+            Text(
+                "← Setup",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .align(Alignment.Start)
+                    .clickable { lobbyStep = 0 }
+                    .padding(vertical = 4.dp),
+            )
+            Spacer(Modifier.height(10.dp))
 
-        when (gameMode) {
-            GameMode.BLUETOOTH -> {
-                BluetoothLobby(
+            when (gameMode) {
+                GameMode.BLUETOOTH -> BluetoothLobby(
                     btState = btState,
                     onHost = onBtHost,
                     onScan = onBtScan,
@@ -853,9 +916,7 @@ private fun ReadyOverlay(
                     onRequestPermissions = onRequestBtPermissions,
                     onCommence = onCommence,
                 )
-            }
-            GameMode.ONLINE -> {
-                OnlineLobby(
+                GameMode.ONLINE -> OnlineLobby(
                     onlineState = onlineState,
                     onCreate = onOnlineCreate,
                     onJoin = onOnlineJoin,
@@ -863,15 +924,14 @@ private fun ReadyOverlay(
                     onCommence = onCommence,
                     scrollState = scrollState,
                 )
-            }
-            else -> {
-                LobbyButton("Commence Activity") { onCommence() }
+                else -> LobbyButton("Commence Activity") { onCommence() }
             }
         }
+
         Spacer(Modifier.height(16.dp))
         Text(
             "Abandon Endeavour",
-            color = Color.White.copy(alpha = 0.35f),
+            color = Color.White.copy(alpha = 0.55f),
             fontSize = 12.sp,
             modifier = Modifier
                 .clickable(onClick = onAbandon)
@@ -1211,6 +1271,20 @@ private fun OnlineLobby(
                                 .clickable { joinCode = "" }
                                 .padding(horizontal = 12.dp, vertical = 6.dp),
                         )
+                        if (joinCode.isNotEmpty()) {
+                            Text(
+                                text = "⌫",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 14.sp,
+                                modifier = Modifier
+                                    .background(
+                                        Color.White.copy(alpha = 0.08f),
+                                        RoundedCornerShape(8.dp),
+                                    )
+                                    .clickable { joinCode = joinCode.dropLast(1) }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            )
+                        }
                         if (joinCode.length == CODE_LENGTH) {
                             Text(
                                 text = "Connect",
