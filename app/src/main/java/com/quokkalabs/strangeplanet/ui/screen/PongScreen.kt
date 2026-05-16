@@ -89,6 +89,7 @@ import com.quokkalabs.strangeplanet.data.model.PongSettings
 import com.quokkalabs.strangeplanet.BuildConfig
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.components.DebugHud
+import com.quokkalabs.strangeplanet.ui.components.ExitChoiceDialog
 import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CardPink
@@ -422,68 +423,26 @@ fun PongScreen(
                     Text("←", fontSize = 22.sp)
                 }
 
-                // Exit confirmation
+                // Exit confirmation — Pong is real-time/networked, so state
+                // cannot be meaningfully preserved (Abandon / Resume only).
                 if (showExitConfirm) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .clickable { /* block taps */ },
+                    ExitChoiceDialog(
+                        canPreserve = false,
+                        onAbandon = {
+                            showExitConfirm = false
+                            when (state.gameMode) {
+                                GameMode.BLUETOOTH -> viewModel.quitBtGame()
+                                GameMode.ONLINE -> viewModel.quitOnlineGame()
+                                else -> viewModel.resetGame()
+                            }
+                            onBack()
+                        },
+                        onCancel = {
+                            showExitConfirm = false
+                            viewModel.requestPause()
+                        },
+                        onPreserve = { showExitConfirm = false },
                     )
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
-                            .padding(28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            "Abandon Contest?",
-                            color = AlienPink,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Progress will not\nbe preserved.",
-                            color = Color.White.copy(alpha = 0.6f),
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center,
-                        )
-                        Spacer(Modifier.height(20.dp))
-                        Text(
-                            text = "Confirm Departure",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .background(AlienPink.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-                                .clickable {
-                                    showExitConfirm = false
-                                    when (state.gameMode) {
-                                        GameMode.BLUETOOTH -> viewModel.quitBtGame()
-                                        GameMode.ONLINE -> viewModel.quitOnlineGame()
-                                        else -> viewModel.resetGame()
-                                    }
-                                    onBack()
-                                }
-                                .padding(horizontal = 20.dp, vertical = 12.dp),
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = "Resume Activity",
-                            color = Color.White.copy(alpha = 0.6f),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                                .clickable { showExitConfirm = false; viewModel.requestPause() }
-                                .padding(horizontal = 20.dp, vertical = 10.dp),
-                        )
-                    }
                 }
 
                 // Debug HUD (debug builds only)

@@ -119,6 +119,46 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
         _state.value = e.createInitialState(highScore = highScore)
     }
 
+    // ── Session preservation (progress snapshot) ───────────────────────────
+
+    fun hasSavedSession(): Boolean = prefs.getBoolean(KEY_SESSION, false)
+
+    fun saveSession() {
+        val s = _state.value
+        if (s.phase != AsteroidPhase.PLAYING) return
+        commitHighScore(s.score)
+        prefs.edit()
+            .putBoolean(KEY_SESSION, true)
+            .putInt("$KEY_SESSION.score", s.score)
+            .putInt("$KEY_SESSION.lives", s.lives)
+            .putInt("$KEY_SESSION.level", s.level)
+            .putInt("$KEY_SESSION.extra", s.extraLifeAwarded)
+            .apply()
+    }
+
+    fun resumeSession() {
+        val e = engine ?: return
+        if (!prefs.getBoolean(KEY_SESSION, false)) return
+        _state.value = e.createInitialState(
+            level = prefs.getInt("$KEY_SESSION.level", 1),
+            score = prefs.getInt("$KEY_SESSION.score", 0),
+            lives = prefs.getInt("$KEY_SESSION.lives", 3),
+            highScore = highScore,
+            extraLifeAwarded = prefs.getInt("$KEY_SESSION.extra", 0),
+        )
+        discardSavedSession()
+    }
+
+    fun discardSavedSession() {
+        prefs.edit()
+            .remove(KEY_SESSION)
+            .remove("$KEY_SESSION.score")
+            .remove("$KEY_SESSION.lives")
+            .remove("$KEY_SESSION.level")
+            .remove("$KEY_SESSION.extra")
+            .apply()
+    }
+
     fun setSoundEnabled(enabled: Boolean) {
         _settings.value = _settings.value.copy(soundEnabled = enabled)
         prefs.edit().putBoolean(KEY_SOUND, enabled).apply()
@@ -133,5 +173,6 @@ class AsteroidViewModel(application: Application) : AndroidViewModel(application
         const val KEY_HIGH_SCORE = "high_score"
         const val KEY_SOUND = "sound_enabled"
         const val KEY_ALT_LAYOUT = "alt_layout"
+        const val KEY_SESSION = "saved_session"
     }
 }

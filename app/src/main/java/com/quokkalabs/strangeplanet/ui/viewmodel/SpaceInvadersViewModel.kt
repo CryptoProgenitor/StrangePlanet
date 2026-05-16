@@ -19,6 +19,9 @@ import kotlinx.coroutines.launch
 
 class SpaceInvadersViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val prefs =
+        application.getSharedPreferences("si_prefs", Application.MODE_PRIVATE)
+
     private var engine: SpaceInvadersEngine? = null
     private val _state = MutableStateFlow(SpaceInvadersState())
     val state: StateFlow<SpaceInvadersState> = _state.asStateFlow()
@@ -160,8 +163,49 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    // ── Session preservation (progress snapshot) ───────────────────────────
+
+    fun hasSavedSession(): Boolean = prefs.getBoolean(KEY_SESSION, false)
+
+    fun saveSession() {
+        val s = _state.value
+        if (s.phase != SIPhase.PLAYING) return
+        prefs.edit()
+            .putBoolean(KEY_SESSION, true)
+            .putInt("$KEY_SESSION.score", s.score)
+            .putInt("$KEY_SESSION.lives", s.lives)
+            .putInt("$KEY_SESSION.wave", s.wave)
+            .apply()
+    }
+
+    fun resumeSession() {
+        val e = engine ?: return
+        if (!prefs.getBoolean(KEY_SESSION, false)) return
+        _state.value = e.createInitialState(
+            wave = prefs.getInt("$KEY_SESSION.wave", 1),
+            score = prefs.getInt("$KEY_SESSION.score", 0),
+            lives = prefs.getInt("$KEY_SESSION.lives", 3),
+        )
+        isTouching = false
+        playerTouchX = null
+        discardSavedSession()
+    }
+
+    fun discardSavedSession() {
+        prefs.edit()
+            .remove(KEY_SESSION)
+            .remove("$KEY_SESSION.score")
+            .remove("$KEY_SESSION.lives")
+            .remove("$KEY_SESSION.wave")
+            .apply()
+    }
+
     override fun onCleared() {
         super.onCleared()
         soundManager.release()
+    }
+
+    private companion object {
+        const val KEY_SESSION = "saved_session"
     }
 }

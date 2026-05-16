@@ -524,11 +524,52 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         btManager?.cleanup()
     }
 
+    // ── Session preservation (progress snapshot, SOLO only) ────────────────
+
+    fun hasSavedSession(): Boolean = prefs.getBoolean(KEY_SESSION, false)
+
+    fun saveSession() {
+        val s = _state.value
+        if (s.mode != PacMode.SOLO || s.phase != PacPhase.PLAYING) return
+        commitHighScore(s.score)
+        prefs.edit()
+            .putBoolean(KEY_SESSION, true)
+            .putInt("$KEY_SESSION.score", s.score)
+            .putInt("$KEY_SESSION.lives", s.lives)
+            .putInt("$KEY_SESSION.level", s.level)
+            .apply()
+    }
+
+    fun resumeSession() {
+        val e = engine ?: return
+        if (!prefs.getBoolean(KEY_SESSION, false)) return
+        _state.value = e.createInitialState(
+            level = prefs.getInt("$KEY_SESSION.level", 1),
+            score = prefs.getInt("$KEY_SESSION.score", 0),
+            lives = prefs.getInt("$KEY_SESSION.lives", 3),
+            highScore = highScore,
+        )
+        pendingDir = null
+        joystickDir = PacDir.NONE
+        joystickSpeed = 0f
+        discardSavedSession()
+    }
+
+    fun discardSavedSession() {
+        prefs.edit()
+            .remove(KEY_SESSION)
+            .remove("$KEY_SESSION.score")
+            .remove("$KEY_SESSION.lives")
+            .remove("$KEY_SESSION.level")
+            .apply()
+    }
+
     private companion object {
         const val KEY_HIGH_SCORE = "high_score"
         const val KEY_SOUND = "sound_enabled"
         const val KEY_SAYINGS = "show_sayings"
         const val KEY_AVATAR = "avatar"
         const val KEY_JOYPAD = "joypad_enabled"
+        const val KEY_SESSION = "saved_session"
     }
 }

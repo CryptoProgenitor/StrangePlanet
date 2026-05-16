@@ -92,7 +92,9 @@ import com.quokkalabs.strangeplanet.data.model.SeekerMode
 import com.quokkalabs.strangeplanet.data.model.SeekerType
 import com.quokkalabs.strangeplanet.data.model.designation
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
+import com.quokkalabs.strangeplanet.ui.components.ExitChoiceDialog
 import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
+import com.quokkalabs.strangeplanet.ui.components.ResumePrompt
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
@@ -158,10 +160,21 @@ fun PacScreen(
     // suspend; pauseGame is a no-op there).
     PauseOnBackground { viewModel.pauseGame() }
 
-    BackHandler {
-        viewModel.resetGame()
-        onBack()
+    var showExit by remember { mutableStateOf(false) }
+    var showResume by remember { mutableStateOf(viewModel.hasSavedSession()) }
+
+    fun attemptBack() {
+        val preservable = state.mode == PacMode.SOLO &&
+            (state.phase == PacPhase.PLAYING || state.phase == PacPhase.PAUSED)
+        if (preservable) {
+            showExit = true
+        } else {
+            viewModel.resetGame()
+            onBack()
+        }
     }
+
+    BackHandler { attemptBack() }
 
     val avatarBitmap = remember(settings.avatar) {
         val resId = when (settings.avatar) {
@@ -593,7 +606,7 @@ fun PacScreen(
 
             // Back button (matches the styling used elsewhere)
             FloatingActionButton(
-                onClick = { viewModel.resetGame(); onBack() },
+                onClick = { attemptBack() },
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(top = 20.dp, start = 14.dp)
@@ -638,6 +651,37 @@ fun PacScreen(
                     onClose = {
                         showSettings = false
                         viewModel.resumeGame()
+                    },
+                )
+            }
+
+            if (showExit) {
+                ExitChoiceDialog(
+                    canPreserve = true,
+                    onAbandon = {
+                        showExit = false
+                        viewModel.discardSavedSession()
+                        viewModel.resetGame()
+                        onBack()
+                    },
+                    onCancel = { showExit = false },
+                    onPreserve = {
+                        showExit = false
+                        viewModel.saveSession()
+                        onBack()
+                    },
+                )
+            }
+
+            if (showResume && state.phase == PacPhase.READY && state.mode == PacMode.SOLO) {
+                ResumePrompt(
+                    onResume = {
+                        showResume = false
+                        viewModel.resumeSession()
+                    },
+                    onFresh = {
+                        showResume = false
+                        viewModel.discardSavedSession()
                     },
                 )
             }

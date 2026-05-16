@@ -67,7 +67,9 @@ import com.quokkalabs.strangeplanet.data.model.DifficultyLevel
 import com.quokkalabs.strangeplanet.data.model.InvaderType
 import com.quokkalabs.strangeplanet.data.model.SIPhase
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
+import com.quokkalabs.strangeplanet.ui.components.ExitChoiceDialog
 import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
+import com.quokkalabs.strangeplanet.ui.components.ResumePrompt
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.theme.SoftPink
@@ -85,10 +87,19 @@ fun SpaceInvadersScreen(
     val view = LocalView.current
     val context = LocalContext.current
 
-    BackHandler {
-        viewModel.resetGame()
-        onBack()
+    var showExit by remember { mutableStateOf(false) }
+    var showResume by remember { mutableStateOf(viewModel.hasSavedSession()) }
+
+    fun attemptBack() {
+        if (state.phase == SIPhase.PLAYING || state.phase == SIPhase.PAUSED) {
+            showExit = true
+        } else {
+            viewModel.resetGame()
+            onBack()
+        }
     }
+
+    BackHandler { attemptBack() }
 
     // Screen off / app backgrounded → suspend play.
     PauseOnBackground { viewModel.pauseGame() }
@@ -574,7 +585,7 @@ fun SpaceInvadersScreen(
 
                 // ── Back button ─────────────────────────────────────────────
                 FloatingActionButton(
-                    onClick = { viewModel.resetGame(); onBack() },
+                    onClick = { attemptBack() },
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(top = 24.dp, start = 12.dp)
@@ -630,6 +641,37 @@ fun SpaceInvadersScreen(
                         onSayingsToggle = { viewModel.setShowSayings(it) },
                         onDifficultyChange = { viewModel.setDifficulty(it) },
                         onDismiss = { showSettings = false },
+                    )
+                }
+
+                if (showExit) {
+                    ExitChoiceDialog(
+                        canPreserve = true,
+                        onAbandon = {
+                            showExit = false
+                            viewModel.discardSavedSession()
+                            viewModel.resetGame()
+                            onBack()
+                        },
+                        onCancel = { showExit = false },
+                        onPreserve = {
+                            showExit = false
+                            viewModel.saveSession()
+                            onBack()
+                        },
+                    )
+                }
+
+                if (showResume && state.phase == SIPhase.READY) {
+                    ResumePrompt(
+                        onResume = {
+                            showResume = false
+                            viewModel.resumeSession()
+                        },
+                        onFresh = {
+                            showResume = false
+                            viewModel.discardSavedSession()
+                        },
                     )
                 }
             }

@@ -72,7 +72,9 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
+import com.quokkalabs.strangeplanet.ui.components.ExitChoiceDialog
 import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
+import com.quokkalabs.strangeplanet.ui.components.ResumePrompt
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
@@ -170,10 +172,19 @@ fun AsteroidScreen(
         }
     }
 
-    BackHandler {
-        viewModel.resetGame()
-        onBack()
+    var showExit by remember { mutableStateOf(false) }
+    var showResume by remember { mutableStateOf(viewModel.hasSavedSession()) }
+
+    fun attemptBack() {
+        if (state.phase == AsteroidPhase.PLAYING || state.phase == AsteroidPhase.PAUSED) {
+            showExit = true
+        } else {
+            viewModel.resetGame()
+            onBack()
+        }
     }
+
+    BackHandler { attemptBack() }
 
     val shipBitmap = remember {
         BitmapFactory.decodeResource(context.resources, R.drawable.sp_rollsuck)
@@ -348,7 +359,7 @@ fun AsteroidScreen(
 
             // Back button.
             FloatingActionButton(
-                onClick = { viewModel.resetGame(); onBack() },
+                onClick = { attemptBack() },
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(top = 20.dp, start = 14.dp)
@@ -450,6 +461,37 @@ fun AsteroidScreen(
                     onClose = {
                         showSettings = false
                         viewModel.resumeGame()
+                    },
+                )
+            }
+
+            if (showExit) {
+                ExitChoiceDialog(
+                    canPreserve = true,
+                    onAbandon = {
+                        showExit = false
+                        viewModel.discardSavedSession()
+                        viewModel.resetGame()
+                        onBack()
+                    },
+                    onCancel = { showExit = false },
+                    onPreserve = {
+                        showExit = false
+                        viewModel.saveSession()
+                        onBack()
+                    },
+                )
+            }
+
+            if (showResume && state.phase == AsteroidPhase.READY) {
+                ResumePrompt(
+                    onResume = {
+                        showResume = false
+                        viewModel.resumeSession()
+                    },
+                    onFresh = {
+                        showResume = false
+                        viewModel.discardSavedSession()
                     },
                 )
             }
