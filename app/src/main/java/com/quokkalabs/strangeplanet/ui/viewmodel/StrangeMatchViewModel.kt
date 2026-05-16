@@ -57,10 +57,14 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 block()
             } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
                 Log.e("StrangeMatchViewModel", "swap failed", t)
                 _state.update {
+                    val safeGrid = if (it.grid.any { row -> row.any { cell -> cell == null } })
+                        StrangeMatchEngine.refill(it.grid) else it.grid
                     it.copy(
                         phase = StrangeMatchPhase.PLAYING,
+                        grid = safeGrid,
                         matchedCells = emptySet(),
                         bombExplosionCells = emptySet(),
                         selectedCell = null,
@@ -117,6 +121,10 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun resolveMatches(cascade: Int) {
+        if (cascade > 20) {
+            _state.update { it.copy(phase = if (it.movesLeft <= 0) StrangeMatchPhase.GAME_OVER else StrangeMatchPhase.PLAYING) }
+            return
+        }
         val s = _state.value
         val result = StrangeMatchEngine.findMatchResult(s.grid)
         if (result.matched.isEmpty()) {
@@ -193,7 +201,7 @@ class StrangeMatchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveSession() {
         val s = _state.value
-        if (s.phase != StrangeMatchPhase.PLAYING && s.phase != StrangeMatchPhase.ANIMATING) return
+        if (s.phase != StrangeMatchPhase.PLAYING) return
         commitHighScore(s.score)
         val root = JSONObject().apply {
             put("score", s.score)

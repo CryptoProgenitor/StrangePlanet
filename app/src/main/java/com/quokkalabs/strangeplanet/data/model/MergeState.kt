@@ -69,6 +69,8 @@ data class MergeState(
     val pops: List<Pop> = emptyList(),
     val currentTier: MergeTier = MergeTier.DUST_MOTE,
     val nextTier: MergeTier = MergeTier.PEBBLE,
+    /** The two tiers queued after [nextTier] — the "upcoming" column preview. */
+    val upcoming: List<MergeTier> = emptyList(),
     val spoutX: Float = 0f,
     val score: Int = 0,
     val highScore: Int = 0,

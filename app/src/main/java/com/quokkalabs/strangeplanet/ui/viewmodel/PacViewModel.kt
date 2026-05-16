@@ -58,6 +58,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
     // Joystick mode: persistent until the joystick moves; speed 0 = halted.
     @Volatile private var joystickDir: PacDir = PacDir.NONE
     @Volatile private var joystickSpeed: Float = 0f
+    @Volatile private var lastBtTickMs = 0L
 
     private var screenW = 0f
     private var screenH = 0f
@@ -125,6 +126,14 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
                 when (_state.value.mode) {
                     PacMode.BT_CLIENT -> {
                         // Client renders host snapshots only — no local sim.
+                        val tickAge = lastBtTickMs
+                        if (tickAge > 0L && System.currentTimeMillis() - tickAge > 10_000L &&
+                            _state.value.phase == PacPhase.PLAYING
+                        ) {
+                            val eng = engine ?: continue
+                            commitHighScore(_state.value.score)
+                            _state.value = eng.createInitialState(highScore = highScore)
+                        }
                     }
 
                     PacMode.BT_HOST -> {
@@ -186,24 +195,28 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
         when (_state.value.phase) {
             PacPhase.LEVEL_CLEARED -> {
                 delay(1800)
-                val s = _state.value
-                _state.value = e.createInitialState(
-                    level = s.level + 1,
-                    score = s.score,
-                    lives = s.lives,
-                    highScore = highScore,
-                ).copy(phase = PacPhase.PLAYING)
+                while (paused && isActive) delay(50)
+                if (_state.value.phase == PacPhase.LEVEL_CLEARED) {
+                    val s = _state.value
+                    _state.value = e.createInitialState(
+                        level = s.level + 1,
+                        score = s.score,
+                        lives = s.lives,
+                        highScore = highScore,
+                    ).copy(phase = PacPhase.PLAYING)
+                }
             }
             PacPhase.DYING -> {
                 delay(2000)
+                while (paused && isActive) delay(50)
                 val s = _state.value
-                if (s.lives <= 0) {
-                    commitHighScore(s.score)
-                    _state.update {
-                        it.copy(phase = PacPhase.GAME_OVER, highScore = highScore)
+                if (s.phase == PacPhase.DYING) {
+                    if (s.lives <= 0) {
+                        commitHighScore(s.score)
+                        _state.update { it.copy(phase = PacPhase.GAME_OVER, highScore = highScore) }
+                    } else {
+                        _state.value = e.respawnEntities(s)
                     }
-                } else {
-                    _state.value = e.respawnEntities(s)
                 }
             }
             else -> {}
@@ -216,32 +229,37 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
             PacPhase.LEVEL_CLEARED -> {
                 btManager?.sendTick(s, emptyList(), emptyList())
                 delay(1800)
-                // Same adversary assignment carries into the next tier.
-                _state.value = e.createInitialState(
-                    level = s.level + 1,
-                    score = s.score,
-                    lives = s.lives,
-                    highScore = highScore,
-                    mode = PacMode.BT_HOST,
-                    controlledSeekerType = s.controlledSeekerType,
-                ).copy(phase = PacPhase.PLAYING)
-                needsInitBroadcast = true
-                broadcastHost(_state.value, _state.value, force = true)
+                while (paused && isActive) delay(50)
+                if (_state.value.phase == PacPhase.LEVEL_CLEARED) {
+                    val cur = _state.value
+                    _state.value = e.createInitialState(
+                        level = cur.level + 1,
+                        score = cur.score,
+                        lives = cur.lives,
+                        highScore = highScore,
+                        mode = PacMode.BT_HOST,
+                        controlledSeekerType = cur.controlledSeekerType,
+                    ).copy(phase = PacPhase.PLAYING)
+                    needsInitBroadcast = true
+                    broadcastHost(_state.value, _state.value, force = true)
+                }
             }
             PacPhase.DYING -> {
                 btManager?.sendTick(s, emptyList(), emptyList())
                 delay(2000)
-                if (s.lives <= 0) {
-                    commitHighScore(s.score)
-                    _state.update {
-                        it.copy(phase = PacPhase.GAME_OVER, highScore = highScore)
+                while (paused && isActive) delay(50)
+                val cur = _state.value
+                if (cur.phase == PacPhase.DYING) {
+                    if (cur.lives <= 0) {
+                        commitHighScore(cur.score)
+                        _state.update { it.copy(phase = PacPhase.GAME_OVER, highScore = highScore) }
+                        btManager?.sendTick(_state.value, emptyList(), emptyList())
+                    } else {
+                        // Pellets are preserved — no MSG_INIT needed; the client
+                        // already holds the correct maze state via prior deltas.
+                        _state.value = e.respawnEntities(cur)
+                        broadcastHost(_state.value, _state.value, force = true)
                     }
-                    btManager?.sendTick(_state.value, emptyList(), emptyList())
-                } else {
-                    // Pellets are preserved — no MSG_INIT needed; the client
-                    // already holds the correct maze state via prior deltas.
-                    _state.value = e.respawnEntities(s)
-                    broadcastHost(_state.value, _state.value, force = true)
                 }
             }
             else -> {}
@@ -250,9 +268,13 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
 
     // 30 Hz on the wire (every other 16 ms tick); resends static maze on demand.
     private var broadcastTick = 0
+    private var resyncTimer = 0
     private fun broadcastHost(prev: PacGameState, next: PacGameState, force: Boolean = false) {
         val mgr = btManager ?: return
-        if (needsInitBroadcast) {
+        resyncTimer++
+        val needsResync = resyncTimer >= 600
+        if (needsInitBroadcast || needsResync) {
+            if (needsResync) { resyncTimer = 0; broadcastTick = -1 }
             mgr.sendInit(next)
             lastSentPellets = next.pellets
             lastSentSocks = next.socks
@@ -518,6 +540,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun applyClientTick(tick: BluetoothPacManager.NetTick) {
         if (_state.value.mode != PacMode.BT_CLIENT) return
+        lastBtTickMs = System.currentTimeMillis()
         tick.eatenPellets.forEach { clientPellets.remove(it) }
         tick.eatenSocks.forEach { clientSocks.remove(it) }
         _state.update { cur ->

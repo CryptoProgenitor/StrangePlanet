@@ -55,6 +55,7 @@ data class SpaceInvadersState(
     val playerProjectiles: List<SIProjectile> = emptyList(),
     val enemyProjectiles: List<SIProjectile> = emptyList(),
     val score: Int = 0,
+    val highScore: Int = 0,
     val lives: Int = 3,
     val phase: SIPhase = SIPhase.READY,
     val wave: Int = 1,

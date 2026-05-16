@@ -440,6 +440,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         val localBallY = (1f - net.ballY) * sh
         val localVx = net.ballVx * hostSW
         val localVy = -(net.ballVy * hostSH)
+        if (!localBallX.isFinite() || !localBallY.isFinite() || !localVx.isFinite() || !localVy.isFinite()) return
 
         if (isNewPacket) {
             lastProcessedRemoteState = net
@@ -677,6 +678,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         val localBallX = net.ballX * sw
         val localBallY = (1f - net.ballY) * sh
         val localAiPaddleX = net.hostPaddleX * sw
+        if (!localBallX.isFinite() || !localBallY.isFinite()) return
 
         val phase = GamePhase.entries.getOrElse(net.phaseOrdinal) { GamePhase.READY }
 
