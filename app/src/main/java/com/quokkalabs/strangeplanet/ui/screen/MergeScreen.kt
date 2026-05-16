@@ -114,9 +114,14 @@ fun MergeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(Unit) {
+                        val sysGestureTopPx = with(density) { 32.dp.toPx() }
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             if (blockInput) return@awaitEachGesture
+                            // Ignore touches originating from system gesture zones (top/bottom edges)
+                            val downY = down.position.y
+                            val inSystemZone = downY < sysGestureTopPx ||
+                                downY > screenHeightPx - with(density) { 56.dp.toPx() }
                             viewModel.onAim(down.position.x)
                             down.consume()
                             while (true) {
@@ -126,7 +131,7 @@ fun MergeScreen(
                                 ch.consume()
                                 if (!ch.pressed) break
                             }
-                            viewModel.onRelease()
+                            if (!inSystemZone) viewModel.onRelease()
                         }
                     },
             ) {
