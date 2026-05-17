@@ -4,6 +4,11 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.quokkalabs.strangeplanet.bluetooth.BluetoothMergeManager
+import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
+import com.quokkalabs.strangeplanet.data.model.BtConnectionState
+import com.quokkalabs.strangeplanet.data.model.MatchResult
+import com.quokkalabs.strangeplanet.data.model.MergeMode
 import com.quokkalabs.strangeplanet.data.model.MergePhase
 import com.quokkalabs.strangeplanet.data.model.MergeState
 import com.quokkalabs.strangeplanet.data.model.MergeTier
@@ -46,6 +51,38 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
 
     @Volatile
     private var paused = false
+
+    // ── Competitive 1v1 (Bluetooth) ─────────────────────────────────────────
+    private var btManager: BluetoothMergeManager? = null
+    private var btPermissionsGranted = false
+
+    private val _btState = MutableStateFlow(BluetoothLobbyState())
+    val btState: StateFlow<BluetoothLobbyState> = _btState.asStateFlow()
+
+    private val _btLobbyActive = MutableStateFlow(false)
+    val btLobbyActive: StateFlow<Boolean> = _btLobbyActive.asStateFlow()
+
+    private val _mode = MutableStateFlow(MergeMode.SOLO)
+    val mode: StateFlow<MergeMode> = _mode.asStateFlow()
+
+    private val _matchDuration = MutableStateFlow(120)
+    val matchDuration: StateFlow<Int> = _matchDuration.asStateFlow()
+
+    private val _timeRemaining = MutableStateFlow(0)
+    val timeRemaining: StateFlow<Int> = _timeRemaining.asStateFlow()
+
+    private val _opponentScore = MutableStateFlow(0)
+    val opponentScore: StateFlow<Int> = _opponentScore.asStateFlow()
+
+    private val _matchActive = MutableStateFlow(false)
+    val matchActive: StateFlow<Boolean> = _matchActive.asStateFlow()
+
+    private val _matchResult = MutableStateFlow<MatchResult?>(null)
+    val matchResult: StateFlow<MatchResult?> = _matchResult.asStateFlow()
+
+    @Volatile private var selfDone = false
+    @Volatile private var opponentDone = false
+    private var matchJob: Job? = null
 
     /** Freeze physics while a modal (exit / resume prompt) is showing. */
     fun setPaused(value: Boolean) {
@@ -97,6 +134,9 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
                     if (updated.phase == MergePhase.GAME_OVER) {
                         commitHighScore(updated.score)
                         _state.value = updated.copy(highScore = highScore)
+                        // VS: overflow locks your score; you're out until the
+                        // opponent is also done. No restart.
+                        if (_mode.value != MergeMode.SOLO && !selfDone) markSelfDone()
                     }
                 } catch (t: Throwable) {
                     // A single bad frame must never permanently kill physics.
@@ -121,7 +161,10 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
     fun onRelease() {
         when (_state.value.phase) {
             MergePhase.PLAYING -> dropRequested = true
-            MergePhase.READY, MergePhase.GAME_OVER -> startGame()
+            // VS matches are driven from the lobby; a tap must never start
+            // or restart a competitive board (overflow = out, no restart).
+            MergePhase.READY, MergePhase.GAME_OVER ->
+                if (_mode.value == MergeMode.SOLO) startGame()
         }
     }
 
@@ -147,6 +190,7 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun undo() {
+        if (_mode.value != MergeMode.SOLO) return
         val snapshot = preDropSnapshot ?: return
         preDropSnapshot = null
         _canUndo.value = false
@@ -161,6 +205,7 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
      * merging them — it buys space, never points. Single-player only.
      */
     fun sweep() {
+        if (_mode.value != MergeMode.SOLO) return
         val s = _state.value
         if (s.phase != MergePhase.PLAYING) return
         val swept = s.orbs.filter { it.tier in SWEEPABLE }
@@ -248,6 +293,195 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun discardSavedSession() {
         prefs.edit().remove(KEY_SESSION).apply()
+    }
+
+    // ── Bluetooth lobby ─────────────────────────────────────────────────────
+
+    private fun ensureBt(): BluetoothMergeManager {
+        btManager?.let { return it }
+        val mgr = BluetoothMergeManager(getApplication())
+        btManager = mgr
+        refreshBtState()
+
+        viewModelScope.launch { mgr.connectionState.collect { refreshBtState() } }
+        viewModelScope.launch { mgr.pairedDevices.collect { refreshBtState() } }
+        viewModelScope.launch { mgr.discoveredDevices.collect { refreshBtState() } }
+        viewModelScope.launch { mgr.connectedDeviceName.collect { refreshBtState() } }
+        // Client: host pressed start — begin our local board.
+        viewModelScope.launch {
+            mgr.remoteStart.collect { dur ->
+                if (dur != null) {
+                    mgr.clearRemoteStart()
+                    _matchDuration.value = dur
+                    beginMatch(dur, MergeMode.BT_CLIENT)
+                }
+            }
+        }
+        // Either side: opponent score/done heartbeat.
+        viewModelScope.launch {
+            mgr.remoteScore.collect { ps ->
+                if (ps != null) {
+                    _opponentScore.value = ps.score
+                    if (ps.done) opponentDone = true
+                    checkMatchEnd()
+                }
+            }
+        }
+        // Opponent left / link dropped.
+        viewModelScope.launch {
+            mgr.remoteQuit.collect { quit -> if (quit) onOpponentLeft() }
+        }
+        return mgr
+    }
+
+    private fun refreshBtState() {
+        val mgr = btManager
+        _btState.value = BluetoothLobbyState(
+            available = mgr?.isAvailable == true,
+            enabled = mgr?.isEnabled == true,
+            permissionsGranted = btPermissionsGranted,
+            connectionState = mgr?.connectionState?.value ?: BtConnectionState.IDLE,
+            pairedDevices = mgr?.pairedDevices?.value ?: emptyList(),
+            discoveredDevices = mgr?.discoveredDevices?.value ?: emptyList(),
+            connectedDeviceName = mgr?.connectedDeviceName?.value,
+            role = mgr?.role,
+        )
+    }
+
+    fun selectSoloMode() {
+        _btLobbyActive.value = false
+        _mode.value = MergeMode.SOLO
+        btDisconnect()
+    }
+
+    fun selectBtMode() {
+        _btLobbyActive.value = true
+        ensureBt()
+        if (btPermissionsGranted) btManager?.loadPairedDevices()
+    }
+
+    fun updateBtPermissions(granted: Boolean) {
+        btPermissionsGranted = granted
+        if (granted) ensureBt().loadPairedDevices()
+        refreshBtState()
+    }
+
+    fun btHost() = ensureBt().startHosting()
+    fun btScan() = ensureBt().startScanning()
+    fun btStopScan() {
+        btManager?.stopScanning()
+    }
+    fun btConnect(address: String) = ensureBt().connectToDevice(address)
+
+    fun btDisconnect() {
+        matchJob?.cancel()
+        matchJob = null
+        _matchActive.value = false
+        _matchResult.value = null
+        btManager?.cleanup()
+        refreshBtState()
+    }
+
+    fun setMatchDuration(seconds: Int) {
+        _matchDuration.value = seconds.coerceIn(30, 600)
+    }
+
+    /** Host: tell the client to start, then begin our own board. */
+    fun startBtMatch() {
+        val mgr = btManager ?: return
+        val dur = _matchDuration.value
+        mgr.sendStart(dur)
+        beginMatch(dur, MergeMode.BT_HOST)
+    }
+
+    // ── Match lifecycle ─────────────────────────────────────────────────────
+
+    private fun beginMatch(durationSeconds: Int, m: MergeMode) {
+        val e = engine ?: return
+        _mode.value = m
+        selfDone = false
+        opponentDone = false
+        _opponentScore.value = 0
+        _matchResult.value = null
+        _timeRemaining.value = durationSeconds
+        _matchActive.value = true
+        dropRequested = false
+        preDropSnapshot = null
+        _canUndo.value = false
+        _state.value = e.startGame(_state.value.copy(highScore = highScore))
+
+        matchJob?.cancel()
+        matchJob = viewModelScope.launch {
+            var msAccum = 0
+            while (isActive && _matchActive.value) {
+                delay(250)
+                msAccum += 250
+                // Heartbeat the opponent ~4x/sec.
+                btManager?.sendScore(_state.value.score, selfDone)
+                if (msAccum >= 1000) {
+                    msAccum = 0
+                    if (!selfDone) {
+                        _timeRemaining.value = (_timeRemaining.value - 1).coerceAtLeast(0)
+                        if (_timeRemaining.value == 0) markSelfDone()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun markSelfDone() {
+        if (selfDone) return
+        selfDone = true
+        commitHighScore(_state.value.score)
+        btManager?.sendScore(_state.value.score, true)
+        checkMatchEnd()
+    }
+
+    private fun checkMatchEnd() {
+        if (!_matchActive.value) return
+        if (selfDone && opponentDone) {
+            val mine = _state.value.score
+            val theirs = _opponentScore.value
+            _matchResult.value = when {
+                mine > theirs -> MatchResult.WIN
+                mine < theirs -> MatchResult.LOSE
+                else -> MatchResult.TIE
+            }
+            _matchActive.value = false
+            matchJob?.cancel()
+            matchJob = null
+        }
+    }
+
+    private fun onOpponentLeft() {
+        if (_matchActive.value) {
+            // Abandonment forfeits the match to the player still present.
+            opponentDone = true
+            _matchResult.value = MatchResult.WIN
+            _matchActive.value = false
+            matchJob?.cancel()
+            matchJob = null
+        }
+    }
+
+    /** Leave a finished/abandoned match and return to solo. */
+    fun quitMatch() {
+        btManager?.sendQuit()
+        matchJob?.cancel()
+        matchJob = null
+        _matchActive.value = false
+        _matchResult.value = null
+        _mode.value = MergeMode.SOLO
+        _btLobbyActive.value = false
+        btManager?.cleanup()
+        refreshBtState()
+        resetGame()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        matchJob?.cancel()
+        btManager?.cleanup()
     }
 
     companion object {
