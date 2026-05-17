@@ -1,6 +1,10 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import android.Manifest
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -61,8 +65,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
+import com.quokkalabs.strangeplanet.data.model.BtConnectionState
+import com.quokkalabs.strangeplanet.data.model.BtRole
 import com.quokkalabs.strangeplanet.data.model.CONSUME_MAX
 import com.quokkalabs.strangeplanet.data.model.ConsumingOrb
+import com.quokkalabs.strangeplanet.data.model.MatchResult
+import com.quokkalabs.strangeplanet.data.model.MergeMode
 import com.quokkalabs.strangeplanet.data.model.MergePhase
 import com.quokkalabs.strangeplanet.data.model.MergeTier
 import com.quokkalabs.strangeplanet.data.model.Orb
@@ -87,8 +96,37 @@ fun MergeScreen(
     val state by viewModel.state.collectAsState()
     val canUndo by viewModel.canUndo.collectAsState()
     val undoPenalty by viewModel.undoPenalty.collectAsState()
+    val btState by viewModel.btState.collectAsState()
+    val btLobbyActive by viewModel.btLobbyActive.collectAsState()
+    val mode by viewModel.mode.collectAsState()
+    val matchActive by viewModel.matchActive.collectAsState()
+    val matchResult by viewModel.matchResult.collectAsState()
+    val timeRemaining by viewModel.timeRemaining.collectAsState()
+    val opponentScore by viewModel.opponentScore.collectAsState()
+    val matchDuration by viewModel.matchDuration.collectAsState()
+    val isVs = mode != MergeMode.SOLO
     val density = LocalDensity.current
     val view = LocalView.current
+
+    val btPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results -> viewModel.updateBtPermissions(results.values.all { it }) }
+    fun requestBtPermissions() {
+        val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_ADVERTISE,
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.BLUETOOTH,
+                Manifest.permission.BLUETOOTH_ADMIN,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            )
+        }
+        btPermissionLauncher.launch(perms)
+    }
 
     DisposableEdgeToEdge(view)
     PauseOnBackground { /* physics pauses naturally when phase != PLAYING */ }
@@ -115,7 +153,8 @@ fun MergeScreen(
     BackHandler { attemptBack() }
 
     val blockInput by rememberUpdatedState(
-        showExit || showResume || showSolarSystem || showUndoConfirm || showSweepConfirm,
+        showExit || showResume || showSolarSystem || showUndoConfirm || showSweepConfirm ||
+            (btLobbyActive && !matchActive) || matchResult != null,
     )
 
     LaunchedEffect(blockInput) { viewModel.setPaused(blockInput) }
@@ -218,7 +257,12 @@ fun MergeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         HudStat("MASS ACCUMULATED", state.score.toString())
-                        HudStat("RECORD", state.highScore.toString())
+                        if (isVs) {
+                            HudStat("TIME", "%d:%02d".format(timeRemaining / 60, timeRemaining % 60))
+                            HudStat("RIVAL", opponentScore.toString())
+                        } else {
+                            HudStat("RECORD", state.highScore.toString())
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(
@@ -254,25 +298,39 @@ fun MergeScreen(
                         .padding(top = 150.dp),
                 )
 
-                // ── READY ──────────────────────────────────────────────────
-                AnimatedVisibility(
-                    visible = state.phase == MergePhase.READY,
-                    enter = fadeIn(tween(150)),
-                    exit = fadeOut(tween(150)),
-                ) {
-                    MergeBanner(
-                        title = "SPHERICAL\nAGGLOMERATION",
-                        subtitle = "Release spheres into the containment\n" +
-                            "vessel. Identical spheres coalesce.\n\n" +
-                            "Form THE INEVITABLE VOID to\nconsume all nearby mass.\n\n" +
-                            "Drag to aim · release to deposit\nTap to commence.",
-                        onAbandon = { viewModel.resetGame(); onBack() },
-                    )
+                // ── Start / lobby (READY, no match running or concluded) ───
+                if (state.phase == MergePhase.READY && !matchActive && matchResult == null) {
+                    if (!btLobbyActive) {
+                        MergeBanner(
+                            title = "SPHERICAL\nAGGLOMERATION",
+                            subtitle = "Release spheres into the containment\n" +
+                                "vessel. Identical spheres coalesce.\n\n" +
+                                "Form THE INEVITABLE VOID to\nconsume all nearby mass.\n\n" +
+                                "Drag to aim · release to deposit\nTap to commence.",
+                            actionLabel = "Nearby Adversary",
+                            onAction = { viewModel.selectBtMode() },
+                            onAbandon = { viewModel.resetGame(); onBack() },
+                        )
+                    } else {
+                        MergeBtLobby(
+                            btState = btState,
+                            matchDuration = matchDuration,
+                            onSolo = { viewModel.selectSoloMode() },
+                            onHost = { viewModel.btHost() },
+                            onScan = { viewModel.btScan() },
+                            onStopScan = { viewModel.btStopScan() },
+                            onConnect = { viewModel.btConnect(it) },
+                            onDisconnect = { viewModel.btDisconnect() },
+                            onRequestPermissions = { requestBtPermissions() },
+                            onSetDuration = { viewModel.setMatchDuration(it) },
+                            onStartMatch = { viewModel.startBtMatch() },
+                        )
+                    }
                 }
 
-                // ── GAME OVER ──────────────────────────────────────────────
+                // ── GAME OVER (solo) ───────────────────────────────────────
                 AnimatedVisibility(
-                    visible = state.phase == MergePhase.GAME_OVER,
+                    visible = state.phase == MergePhase.GAME_OVER && !isVs,
                     enter = fadeIn(tween(150)),
                     exit = fadeOut(tween(150)),
                 ) {
@@ -280,6 +338,28 @@ fun MergeScreen(
                         title = "VESSEL CAPACITY\nEXCEEDED",
                         subtitle = "Mass ${state.score} · Record ${state.highScore}\n" +
                             "This is not ideal.\n\nTap to attempt again.",
+                    )
+                }
+
+                // ── VS: overflowed, locked, waiting for the rival ──────────
+                if (isVs && matchActive && state.phase == MergePhase.GAME_OVER) {
+                    MergeBanner(
+                        title = "VESSEL OVERFLOWED",
+                        subtitle = "Mass locked at ${state.score}.\n" +
+                            "Awaiting the rival being…",
+                    )
+                }
+
+                // ── VS: match results ──────────────────────────────────────
+                matchResult?.let { res ->
+                    MergeResultsOverlay(
+                        result = res,
+                        yourScore = state.score,
+                        rivalScore = opponentScore,
+                        rivalName = btState.connectedDeviceName ?: "Rival Being",
+                        isHost = btState.role == BtRole.HOST,
+                        onRematch = { viewModel.startBtMatch() },
+                        onQuit = { viewModel.quitMatch(); onBack() },
                     )
                 }
 
@@ -297,8 +377,8 @@ fun MergeScreen(
                     Text("←", fontSize = 22.sp)
                 }
 
-                // ── Undo FAB ───────────────────────────────────────────────
-                if (state.phase == MergePhase.PLAYING) {
+                // ── Undo FAB (solo only) ──────────────────────────────────
+                if (state.phase == MergePhase.PLAYING && !isVs) {
                     FloatingActionButton(
                         onClick = { if (canUndo) showUndoConfirm = true },
                         modifier = Modifier
@@ -313,8 +393,8 @@ fun MergeScreen(
                     }
                 }
 
-                // ── Sweep FAB ──────────────────────────────────────────────
-                if (state.phase == MergePhase.PLAYING) {
+                // ── Sweep FAB (solo only) ─────────────────────────────────
+                if (state.phase == MergePhase.PLAYING && !isVs) {
                     FloatingActionButton(
                         onClick = { if (canSweep) showSweepConfirm = true },
                         modifier = Modifier
@@ -778,6 +858,8 @@ private fun BoxScope.MergeNameFlash(
 private fun BoxScope.MergeBanner(
     title: String,
     subtitle: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
     onAbandon: (() -> Unit)? = null,
 ) {
     Box(
@@ -806,6 +888,10 @@ private fun BoxScope.MergeBanner(
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
             )
+            if (actionLabel != null && onAction != null) {
+                Spacer(Modifier.height(18.dp))
+                LobbyPill(actionLabel, onAction)
+            }
             if (onAbandon != null) {
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -815,6 +901,343 @@ private fun BoxScope.MergeBanner(
                     modifier = Modifier
                         .clickable(onClick = onAbandon)
                         .padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LobbyPill(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = AlienPink,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(AlienPink.copy(alpha = 0.15f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 22.dp, vertical = 10.dp),
+    )
+}
+
+@Composable
+private fun DeviceRow(name: String, onClick: () -> Unit) {
+    Text(
+        name,
+        color = Color.White.copy(alpha = 0.85f),
+        fontSize = 13.sp,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth(0.8f)
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White.copy(alpha = 0.07f))
+            .clickable(onClick = onClick)
+            .padding(vertical = 9.dp),
+    )
+}
+
+@Composable
+private fun BoxScope.MergeBtLobby(
+    btState: BluetoothLobbyState,
+    matchDuration: Int,
+    onSolo: () -> Unit,
+    onHost: () -> Unit,
+    onScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    onRequestPermissions: () -> Unit,
+    onSetDuration: (Int) -> Unit,
+    onStartMatch: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    do {
+                        val e = awaitPointerEvent()
+                        e.changes.forEach { it.consume() }
+                    } while (e.changes.any { it.pressed })
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .fillMaxWidth(0.9f)
+                .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "NEARBY ADVERSARY",
+                color = AlienPink,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Two beings, two vessels.\nMost mass when time expires wins.",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(16.dp))
+
+            when {
+                !btState.available -> Text(
+                    "This device lacks\nfrequency hardware.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+
+                !btState.permissionsGranted -> {
+                    Text(
+                        "Frequency access\nauthorization required.",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    LobbyPill("Grant Access") { onRequestPermissions() }
+                }
+
+                !btState.enabled -> Text(
+                    "Activate your frequency\ntransmitter in device settings.",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                )
+
+                else -> when (btState.connectionState) {
+                    BtConnectionState.IDLE -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            LobbyPill("Broadcast") { onHost() }
+                            LobbyPill("Detect") { onScan() }
+                        }
+                        if (btState.pairedDevices.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                "Known beings:",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 11.sp,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            btState.pairedDevices.forEach { d ->
+                                DeviceRow(d.name) { onConnect(d.address) }
+                            }
+                        }
+                    }
+
+                    BtConnectionState.HOSTING -> {
+                        Text(
+                            "Broadcasting…\nAwaiting a distant being.",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        LobbyPill("Cancel") { onDisconnect() }
+                    }
+
+                    BtConnectionState.SCANNING -> {
+                        Text(
+                            "Scanning for beings…",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 13.sp,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        btState.discoveredDevices.forEach { d ->
+                            DeviceRow(d.name) { onConnect(d.address) }
+                        }
+                        btState.pairedDevices.forEach { d ->
+                            DeviceRow(d.name) { onConnect(d.address) }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        LobbyPill("Stop") { onStopScan() }
+                    }
+
+                    BtConnectionState.CONNECTING -> Text(
+                        "Establishing\nfrequency link…",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                    )
+
+                    BtConnectionState.CONNECTED -> {
+                        Text(
+                            "Link established!",
+                            color = Color(0xFFB9F6CA),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        btState.connectedDeviceName?.let {
+                            Text(
+                                "Linked: $it",
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = 12.sp,
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        if (btState.role == BtRole.HOST) {
+                            Text(
+                                "Match duration:",
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = 12.sp,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(120, 180, 300).forEach { secs ->
+                                    val sel = matchDuration == secs
+                                    Text(
+                                        "${secs / 60}m",
+                                        color = if (sel) DeepNavy else AlienPink,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50))
+                                            .background(
+                                                if (sel) AlienPink
+                                                else AlienPink.copy(alpha = 0.15f),
+                                            )
+                                            .clickable { onSetDuration(secs) }
+                                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "−",
+                                    color = AlienPink,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .clickable { onSetDuration(matchDuration - 30) }
+                                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                                )
+                                Text(
+                                    "%d:%02d".format(matchDuration / 60, matchDuration % 60),
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    "+",
+                                    color = AlienPink,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .clickable { onSetDuration(matchDuration + 30) }
+                                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                                )
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            LobbyPill("Commence Match") { onStartMatch() }
+                        } else {
+                            Text(
+                                "Awaiting the host being\nto commence the match…",
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "Solitary Endeavour",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .clickable(onClick = onSolo)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.MergeResultsOverlay(
+    result: MatchResult,
+    yourScore: Int,
+    rivalScore: Int,
+    rivalName: String,
+    isHost: Boolean,
+    onRematch: () -> Unit,
+    onQuit: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    do {
+                        val e = awaitPointerEvent()
+                        e.changes.forEach { it.consume() }
+                    } while (e.changes.any { it.pressed })
+                }
+            }
+            .background(Color.Black.copy(alpha = 0.7f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .fillMaxWidth(0.85f)
+                .background(DeepNavy.copy(alpha = 0.97f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 26.dp, vertical = 26.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                when (result) {
+                    MatchResult.WIN -> "VICTORY"
+                    MatchResult.LOSE -> "DEFEAT"
+                    MatchResult.TIE -> "EQUILIBRIUM"
+                },
+                color = when (result) {
+                    MatchResult.WIN -> Color(0xFFB9F6CA)
+                    MatchResult.LOSE -> AlienPink
+                    MatchResult.TIE -> Color.White
+                },
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "You: $yourScore",
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "$rivalName: $rivalScore",
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 14.sp,
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (isHost) LobbyPill("Rematch") { onRematch() }
+                Text(
+                    "Depart",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onQuit)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                 )
             }
         }
