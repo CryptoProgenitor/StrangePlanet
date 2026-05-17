@@ -5,8 +5,10 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.bluetooth.BluetoothMergeManager
+import com.quokkalabs.strangeplanet.bluetooth.BtHistory
 import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
 import com.quokkalabs.strangeplanet.data.model.BtConnectionState
+import com.quokkalabs.strangeplanet.data.model.BtDeviceInfo
 import com.quokkalabs.strangeplanet.data.model.MatchResult
 import com.quokkalabs.strangeplanet.data.model.MergeMode
 import com.quokkalabs.strangeplanet.data.model.MergePhase
@@ -297,13 +299,28 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── Bluetooth lobby ─────────────────────────────────────────────────────
 
+    private var recentDevices: List<BtDeviceInfo> = emptyList()
+
     private fun ensureBt(): BluetoothMergeManager {
         btManager?.let { return it }
         val mgr = BluetoothMergeManager(getApplication())
         btManager = mgr
+        recentDevices = BtHistory.load(getApplication())
         refreshBtState()
 
-        viewModelScope.launch { mgr.connectionState.collect { refreshBtState() } }
+        viewModelScope.launch {
+            mgr.connectionState.collect { conn ->
+                if (conn == BtConnectionState.CONNECTED) {
+                    val name = mgr.connectedDeviceName.value ?: "Unknown Being"
+                    val addr = mgr.connectedDeviceAddress.value
+                    if (addr != null) {
+                        recentDevices =
+                            BtHistory.remember(getApplication(), BtDeviceInfo(name, addr))
+                    }
+                }
+                refreshBtState()
+            }
+        }
         viewModelScope.launch { mgr.pairedDevices.collect { refreshBtState() } }
         viewModelScope.launch { mgr.discoveredDevices.collect { refreshBtState() } }
         viewModelScope.launch { mgr.connectedDeviceName.collect { refreshBtState() } }
@@ -345,6 +362,7 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
             discoveredDevices = mgr?.discoveredDevices?.value ?: emptyList(),
             connectedDeviceName = mgr?.connectedDeviceName?.value,
             role = mgr?.role,
+            recentDevices = recentDevices,
         )
     }
 

@@ -965,29 +965,32 @@ private fun BluetoothLobby(
 
             else -> when (btState.connectionState) {
                 BtConnectionState.IDLE -> {
-                    // Quick reconnect to last known opponent
-                    btState.lastConnectedDevice?.let { last ->
+                    // Quick reconnect to previous adversaries
+                    if (btState.recentDevices.isNotEmpty()) {
                         Text(
-                            "Previously linked being:",
+                            "Previous adversaries:",
                             color = Color.White.copy(alpha = 0.4f),
                             fontSize = 11.sp,
                         )
                         Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = last.name,
-                            color = AlienPink,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onConnect(last.address) }
-                                .background(
-                                    AlienPink.copy(alpha = 0.15f),
-                                    RoundedCornerShape(8.dp),
-                                )
-                                .padding(horizontal = 12.dp, vertical = 12.dp),
-                            textAlign = TextAlign.Center,
-                        )
+                        btState.recentDevices.forEach { d ->
+                            Text(
+                                text = d.name,
+                                color = AlienPink,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 3.dp)
+                                    .clickable { onConnect(d.address) }
+                                    .background(
+                                        AlienPink.copy(alpha = 0.15f),
+                                        RoundedCornerShape(8.dp),
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                         Spacer(Modifier.height(12.dp))
                     }
 

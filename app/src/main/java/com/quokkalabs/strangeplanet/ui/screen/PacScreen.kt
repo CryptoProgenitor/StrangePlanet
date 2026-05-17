@@ -1102,6 +1102,18 @@ private fun PacBtLobby(
                         PacLobbyButton("Broadcast\nPresence") { onHost() }
                         PacLobbyButton("Detect\nBeings") { onScan() }
                     }
+                    if (btState.recentDevices.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Previous Adversaries:",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        btState.recentDevices.forEach { d ->
+                            DeviceRow(d.name) { onConnect(d.address) }
+                        }
+                    }
                     if (btState.pairedDevices.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
                         Text(

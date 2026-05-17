@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.R
 import com.quokkalabs.strangeplanet.audio.PongSoundManager
 import com.quokkalabs.strangeplanet.bluetooth.BluetoothPongManager
+import com.quokkalabs.strangeplanet.bluetooth.BtHistory
 import com.quokkalabs.strangeplanet.data.model.BallTrailPoint
 import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
 import com.quokkalabs.strangeplanet.data.model.BtConnectionState
@@ -827,6 +828,7 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
             available = bt.isAvailable,
             enabled = bt.isEnabled,
             lastConnectedDevice = loadLastBtDevice(),
+            recentDevices = BtHistory.load(getApplication()),
         )
         if (bt.isAvailable && bt.isEnabled) {
             bt.loadPairedDevices()
@@ -847,7 +849,10 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     if (address != null) {
                         val device = BtDeviceInfo(name, address)
                         saveLastBtDevice(device)
-                        _btState.update { it.copy(lastConnectedDevice = device) }
+                        val recent = BtHistory.remember(getApplication(), device)
+                        _btState.update {
+                            it.copy(lastConnectedDevice = device, recentDevices = recent)
+                        }
                     }
                 }
             }

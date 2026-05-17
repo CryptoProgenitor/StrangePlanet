@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.bluetooth.BluetoothPacManager
+import com.quokkalabs.strangeplanet.bluetooth.BtHistory
 import com.quokkalabs.strangeplanet.data.model.BtConnectionState
+import com.quokkalabs.strangeplanet.data.model.BtDeviceInfo
 import com.quokkalabs.strangeplanet.data.model.BluetoothLobbyState
 import com.quokkalabs.strangeplanet.data.model.PacAvatar
 import com.quokkalabs.strangeplanet.data.model.PacDir
@@ -392,14 +394,27 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── Bluetooth lobby API ──────────────────────────────────────────────────
 
+    private var recentDevices: List<BtDeviceInfo> = emptyList()
+
     private fun ensureBt(): BluetoothPacManager {
         btManager?.let { return it }
         val mgr = BluetoothPacManager(getApplication())
         btManager = mgr
+        recentDevices = BtHistory.load(getApplication())
         refreshBtState()
 
         viewModelScope.launch {
-            mgr.connectionState.collect { refreshBtState() }
+            mgr.connectionState.collect { conn ->
+                if (conn == BtConnectionState.CONNECTED) {
+                    val name = mgr.connectedDeviceName.value ?: "Unknown Being"
+                    val addr = mgr.connectedDeviceAddress.value
+                    if (addr != null) {
+                        recentDevices =
+                            BtHistory.remember(getApplication(), BtDeviceInfo(name, addr))
+                    }
+                }
+                refreshBtState()
+            }
         }
         viewModelScope.launch {
             mgr.pairedDevices.collect { refreshBtState() }
@@ -447,6 +462,7 @@ class PacViewModel(application: Application) : AndroidViewModel(application) {
             discoveredDevices = mgr?.discoveredDevices?.value ?: emptyList(),
             connectedDeviceName = mgr?.connectedDeviceName?.value,
             role = mgr?.role,
+            recentDevices = recentDevices,
         )
     }
 

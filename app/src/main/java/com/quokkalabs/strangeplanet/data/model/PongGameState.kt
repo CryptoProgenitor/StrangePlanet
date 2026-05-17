@@ -43,6 +43,8 @@ data class BluetoothLobbyState(
     val connectedDeviceName: String? = null,
     val role: BtRole? = null,
     val lastConnectedDevice: BtDeviceInfo? = null,
+    /** Persisted, shared across all games' lobbies. Most-recent first. */
+    val recentDevices: List<BtDeviceInfo> = emptyList(),
 )
 
 enum class DifficultyLevel(val label: String) {

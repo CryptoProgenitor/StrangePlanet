@@ -122,6 +122,9 @@ class BluetoothPacManager(private val context: Context) {
     private val _connectedDeviceName = MutableStateFlow<String?>(null)
     val connectedDeviceName: StateFlow<String?> = _connectedDeviceName.asStateFlow()
 
+    private val _connectedDeviceAddress = MutableStateFlow<String?>(null)
+    val connectedDeviceAddress: StateFlow<String?> = _connectedDeviceAddress.asStateFlow()
+
     /** Host: latest direction the adversary being is holding for its seeker. */
     private val _remoteSeekerDir = MutableStateFlow<PacDir?>(null)
     val remoteSeekerDir: StateFlow<PacDir?> = _remoteSeekerDir.asStateFlow()
@@ -236,6 +239,11 @@ class BluetoothPacManager(private val context: Context) {
                     } catch (_: SecurityException) {
                         null
                     } ?: "Unknown Being"
+                    _connectedDeviceAddress.value = try {
+                        s.remoteDevice?.address
+                    } catch (_: SecurityException) {
+                        null
+                    }
                     setupStreams(s)
                     _connectionState.value = BtConnectionState.CONNECTED
                     startReadLoop()
@@ -299,6 +307,7 @@ class BluetoothPacManager(private val context: Context) {
                     } catch (_: SecurityException) {
                         null
                     } ?: "Unknown Being"
+                    _connectedDeviceAddress.value = address
                     setupStreams(s)
                     _connectionState.value = BtConnectionState.CONNECTED
                     startReadLoop()
@@ -446,6 +455,7 @@ class BluetoothPacManager(private val context: Context) {
         _remoteInit.value = null
         _remoteTick.value = null
         _connectedDeviceName.value = null
+        _connectedDeviceAddress.value = null
     }
 
     fun cleanup() {

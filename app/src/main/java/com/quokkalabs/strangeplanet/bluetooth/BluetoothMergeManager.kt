@@ -62,6 +62,9 @@ class BluetoothMergeManager(private val context: Context) {
     private val _connectedDeviceName = MutableStateFlow<String?>(null)
     val connectedDeviceName: StateFlow<String?> = _connectedDeviceName.asStateFlow()
 
+    private val _connectedDeviceAddress = MutableStateFlow<String?>(null)
+    val connectedDeviceAddress: StateFlow<String?> = _connectedDeviceAddress.asStateFlow()
+
     /** Client: the duration the host chose (seconds), once the match begins. */
     private val _remoteStart = MutableStateFlow<Int?>(null)
     val remoteStart: StateFlow<Int?> = _remoteStart.asStateFlow()
@@ -168,6 +171,11 @@ class BluetoothMergeManager(private val context: Context) {
                     } catch (_: SecurityException) {
                         null
                     } ?: "Unknown Being"
+                    _connectedDeviceAddress.value = try {
+                        s.remoteDevice?.address
+                    } catch (_: SecurityException) {
+                        null
+                    }
                     setupStreams(s)
                     _connectionState.value = BtConnectionState.CONNECTED
                     startReadLoop()
@@ -231,6 +239,7 @@ class BluetoothMergeManager(private val context: Context) {
                     } catch (_: SecurityException) {
                         null
                     } ?: "Unknown Being"
+                    _connectedDeviceAddress.value = address
                     setupStreams(s)
                     _connectionState.value = BtConnectionState.CONNECTED
                     startReadLoop()
@@ -312,6 +321,7 @@ class BluetoothMergeManager(private val context: Context) {
         _remoteScore.value = null
         _remoteQuit.value = false
         _connectedDeviceName.value = null
+        _connectedDeviceAddress.value = null
     }
 
     fun cleanup() {
