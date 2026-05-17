@@ -126,7 +126,7 @@ fun MergeScreen(
                     .pointerInput(Unit) {
                         val sysGestureTopPx = with(density) { 32.dp.toPx() }
                         awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val down = awaitFirstDown(requireUnconsumed = true)
                             if (blockInput) return@awaitEachGesture
                             // Ignore touches originating from system gesture zones (top/bottom edges)
                             val downY = down.position.y
@@ -186,7 +186,16 @@ fun MergeScreen(
                         .align(Alignment.TopCenter)
                         .padding(top = 28.dp)
                         .background(DeepNavy.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false).consume()
+                                do {
+                                    val event = awaitPointerEvent()
+                                    event.changes.forEach { it.consume() }
+                                } while (event.changes.any { it.pressed })
+                            }
+                        },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(
