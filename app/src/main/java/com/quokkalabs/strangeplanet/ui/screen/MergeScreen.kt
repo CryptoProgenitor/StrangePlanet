@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -785,17 +786,21 @@ private fun UndoConfirmDialog(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
             .background(Color.Black.copy(alpha = 0.6f))
             .clickable(onClick = onCancel),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                )
                 .widthIn(max = 300.dp)
                 .fillMaxWidth(0.8f)
                 .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
@@ -847,21 +852,27 @@ private fun SolarSystemModal(onDismiss: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // Absorb every pointer event — prevents drags reaching the game layer
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
             .background(Color.Black.copy(alpha = 0.75f))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                )
                 .widthIn(max = 320.dp)
                 .fillMaxWidth(0.85f)
                 .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
                 .padding(horizontal = 20.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 "SPHERES OF THE COSMOS",
@@ -899,13 +910,18 @@ private fun SolarSystemModal(onDismiss: () -> Unit) {
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(14.dp))
             Text(
                 "tap to close",
-                color = Color.White.copy(alpha = 0.35f),
-                fontSize = 10.sp,
-                modifier = Modifier.fillMaxWidth(),
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.1f))
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
             )
         }
     }
