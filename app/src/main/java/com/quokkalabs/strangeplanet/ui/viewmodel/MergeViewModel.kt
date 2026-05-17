@@ -35,6 +35,8 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile private var preDropSnapshot: MergeState? = null
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+    private val _undoPenalty = MutableStateFlow(0)
+    val undoPenalty: StateFlow<Int> = _undoPenalty.asStateFlow()
 
     @Volatile
     private var spoutX: Float = 0f
@@ -87,6 +89,7 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
                     dropRequested = false
                     if (drop && _state.value.canDrop) {
                         preDropSnapshot = _state.value
+                        _undoPenalty.value = (_state.value.currentTier.ordinal + 1) * 5
                         _canUndo.value = true
                     }
                     val updated = e.update(_state.value, spoutX, drop)
@@ -127,6 +130,7 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         dropRequested = false
         preDropSnapshot = null
         _canUndo.value = false
+        _undoPenalty.value = 0
         _state.value = e.startGame(_state.value.copy(highScore = highScore))
     }
 
@@ -136,6 +140,7 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         dropRequested = false
         preDropSnapshot = null
         _canUndo.value = false
+        _undoPenalty.value = 0
         val s = e.createInitialState(highScore)
         spoutX = s.spoutX
         _state.value = s
@@ -145,7 +150,8 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         val snapshot = preDropSnapshot ?: return
         preDropSnapshot = null
         _canUndo.value = false
-        val penalty = (snapshot.currentTier.ordinal + 1) * 5
+        val penalty = _undoPenalty.value
+        _undoPenalty.value = 0
         _state.value = snapshot.copy(score = (snapshot.score - penalty).coerceAtLeast(0))
     }
 

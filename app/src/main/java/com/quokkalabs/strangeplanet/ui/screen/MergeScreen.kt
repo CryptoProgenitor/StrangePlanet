@@ -82,6 +82,7 @@ fun MergeScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val canUndo by viewModel.canUndo.collectAsState()
+    val undoPenalty by viewModel.undoPenalty.collectAsState()
     val density = LocalDensity.current
     val view = LocalView.current
 
@@ -91,6 +92,7 @@ fun MergeScreen(
     var showExit by remember { mutableStateOf(false) }
     var showResume by remember { mutableStateOf(viewModel.hasSavedSession()) }
     var showSolarSystem by remember { mutableStateOf(false) }
+    var showUndoConfirm by remember { mutableStateOf(false) }
 
     fun attemptBack() {
         if (state.phase == MergePhase.PLAYING) {
@@ -272,7 +274,7 @@ fun MergeScreen(
                 // ── Undo FAB ───────────────────────────────────────────────
                 if (state.phase == MergePhase.PLAYING) {
                     FloatingActionButton(
-                        onClick = { viewModel.undo() },
+                        onClick = { if (canUndo) showUndoConfirm = true },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(bottom = 20.dp, end = 14.dp)
@@ -288,6 +290,15 @@ fun MergeScreen(
                 // ── Solar system reference modal ───────────────────────────
                 if (showSolarSystem) {
                     SolarSystemModal(onDismiss = { showSolarSystem = false })
+                }
+
+                // ── Undo confirmation ──────────────────────────────────────
+                if (showUndoConfirm) {
+                    UndoConfirmDialog(
+                        penalty = undoPenalty,
+                        onConfirm = { viewModel.undo(); showUndoConfirm = false },
+                        onCancel = { showUndoConfirm = false },
+                    )
                 }
 
                 if (showExit) {
@@ -760,6 +771,72 @@ private fun DisposableEdgeToEdge(view: android.view.View) {
             if (window != null) {
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+}
+
+@Composable
+private fun UndoConfirmDialog(
+    penalty: Int,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                )
+                .widthIn(max = 300.dp)
+                .fillMaxWidth(0.8f)
+                .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 24.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "UNDO LAST DROP?",
+                color = AlienPink,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Costs $penalty points.",
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    "Cancel",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onCancel)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+                Text(
+                    "Undo (−$penalty)",
+                    color = AlienPink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable(onClick = onConfirm)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
             }
         }
     }
