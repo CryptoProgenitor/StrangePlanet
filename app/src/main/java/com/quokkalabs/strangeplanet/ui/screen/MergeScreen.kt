@@ -136,17 +136,20 @@ fun MergeScreen(
     var showSolarSystem by remember { mutableStateOf(false) }
     var showUndoConfirm by remember { mutableStateOf(false) }
     var showSweepConfirm by remember { mutableStateOf(false) }
+    var showForfeitConfirm by remember { mutableStateOf(false) }
 
     val sweepCost = MergeViewModel.sweepCost(state.orbs)
     val canSweep = state.orbs.any { it.tier in MergeViewModel.SWEEPABLE } &&
         state.score >= sweepCost
 
     fun attemptBack() {
-        if (state.phase == MergePhase.PLAYING) {
-            showExit = true
-        } else {
-            viewModel.resetGame()
-            onBack()
+        when {
+            // Mid-match back = forfeit (confirmed). Quitter loses outright.
+            isVs && matchActive -> showForfeitConfirm = true
+            // Results showing, or in lobby: just leave to the menu.
+            isVs -> { viewModel.quitMatch(); onBack() }
+            state.phase == MergePhase.PLAYING -> showExit = true
+            else -> { viewModel.resetGame(); onBack() }
         }
     }
 
@@ -154,7 +157,7 @@ fun MergeScreen(
 
     val blockInput by rememberUpdatedState(
         showExit || showResume || showSolarSystem || showUndoConfirm || showSweepConfirm ||
-            (btLobbyActive && !matchActive) || matchResult != null,
+            showForfeitConfirm || (btLobbyActive && !matchActive) || matchResult != null,
     )
 
     LaunchedEffect(blockInput) { viewModel.setPaused(blockInput) }
@@ -429,6 +432,14 @@ fun MergeScreen(
                         cost = sweepCost,
                         onConfirm = { viewModel.sweep(); showSweepConfirm = false },
                         onCancel = { showSweepConfirm = false },
+                    )
+                }
+
+                // ── Forfeit confirmation (VS) ──────────────────────────────
+                if (showForfeitConfirm) {
+                    ForfeitConfirmDialog(
+                        onConfirm = { showForfeitConfirm = false; viewModel.forfeitMatch() },
+                        onCancel = { showForfeitConfirm = false },
                     )
                 }
 
@@ -1260,6 +1271,73 @@ private fun DisposableEdgeToEdge(view: android.view.View) {
             if (window != null) {
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForfeitConfirmDialog(
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .fillMaxWidth(0.8f)
+                .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 24.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "FORFEIT THE MATCH?",
+                color = AlienPink,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Departing now is an immediate loss,\nwhatever your current mass.",
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "Keep Playing",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onCancel)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+                Text(
+                    "Forfeit",
+                    color = AlienPink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable(onClick = onConfirm)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
             }
         }
     }

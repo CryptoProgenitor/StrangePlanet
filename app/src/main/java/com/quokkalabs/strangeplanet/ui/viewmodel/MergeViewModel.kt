@@ -464,6 +464,20 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Back pressed mid-match: an unconditional loss for the quitter no matter
+     * the score. The opponent's [onOpponentLeft] turns the sent QUIT into a
+     * win. The forfeiter sees the DEFEAT scoreboard, then departs.
+     */
+    fun forfeitMatch() {
+        if (!_matchActive.value) return
+        btManager?.sendQuit()
+        matchJob?.cancel()
+        matchJob = null
+        _matchActive.value = false
+        _matchResult.value = MatchResult.LOSE
+    }
+
     /** Leave a finished/abandoned match and return to solo. */
     fun quitMatch() {
         btManager?.sendQuit()
