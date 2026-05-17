@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -79,6 +81,7 @@ fun MergeScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
+    val canUndo by viewModel.canUndo.collectAsState()
     val density = LocalDensity.current
     val view = LocalView.current
 
@@ -87,6 +90,7 @@ fun MergeScreen(
 
     var showExit by remember { mutableStateOf(false) }
     var showResume by remember { mutableStateOf(viewModel.hasSavedSession()) }
+    var showSolarSystem by remember { mutableStateOf(false) }
 
     fun attemptBack() {
         if (state.phase == MergePhase.PLAYING) {
@@ -189,16 +193,16 @@ fun MergeScreen(
                         HudStat("RECORD", state.highScore.toString())
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        "UPCOMING",
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Spacer(Modifier.height(4.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { showSolarSystem = true },
+                            )
+                            .padding(4.dp),
                     ) {
                         val queue = listOf(state.nextTier) + state.upcoming.take(2)
                         for (idx in queue.indices) {
@@ -219,7 +223,7 @@ fun MergeScreen(
                     emphatic = state.voidFlash,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 110.dp),
+                        .padding(top = 150.dp),
                 )
 
                 // ── READY ──────────────────────────────────────────────────
@@ -263,6 +267,27 @@ fun MergeScreen(
                     contentColor = AlienPink,
                 ) {
                     Text("←", fontSize = 22.sp)
+                }
+
+                // ── Undo FAB ───────────────────────────────────────────────
+                if (state.phase == MergePhase.PLAYING) {
+                    FloatingActionButton(
+                        onClick = { viewModel.undo() },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(bottom = 20.dp, end = 14.dp)
+                            .size(44.dp),
+                        shape = CircleShape,
+                        containerColor = DeepNavy.copy(alpha = if (canUndo) 0.75f else 0.35f),
+                        contentColor = AlienPink.copy(alpha = if (canUndo) 1f else 0.3f),
+                    ) {
+                        Text("↺", fontSize = 20.sp)
+                    }
+                }
+
+                // ── Solar system reference modal ───────────────────────────
+                if (showSolarSystem) {
+                    SolarSystemModal(onDismiss = { showSolarSystem = false })
                 }
 
                 if (showExit) {
@@ -736,6 +761,75 @@ private fun DisposableEdgeToEdge(view: android.view.View) {
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.show(WindowInsetsCompat.Type.systemBars())
             }
+        }
+    }
+}
+
+@Composable
+private fun SolarSystemModal(onDismiss: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.75f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                )
+                .widthIn(max = 320.dp)
+                .fillMaxWidth(0.85f)
+                .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+        ) {
+            Text(
+                "SPHERES OF THE COSMOS",
+                color = AlienPink,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(14.dp))
+            MergeTier.entries.forEach { tier ->
+                val mergeScore = (tier.ordinal + 1) * 5
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Canvas(modifier = Modifier.size(28.dp)) {
+                        val r = size.minDimension / 2f
+                        drawOrb(Orb(tier.ordinal.toLong(), tier, r, r), r)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        tier.displayName,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "+$mergeScore",
+                        color = AlienPink,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "tap to close",
+                color = Color.White.copy(alpha = 0.35f),
+                fontSize = 10.sp,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

@@ -32,6 +32,10 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(MergeState(highScore = highScore))
     val state: StateFlow<MergeState> = _state.asStateFlow()
 
+    @Volatile private var preDropSnapshot: MergeState? = null
+    private val _canUndo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+
     @Volatile
     private var spoutX: Float = 0f
 
@@ -81,6 +85,10 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
                 try {
                     val drop = dropRequested
                     dropRequested = false
+                    if (drop && _state.value.canDrop) {
+                        preDropSnapshot = _state.value
+                        _canUndo.value = true
+                    }
                     val updated = e.update(_state.value, spoutX, drop)
                     _state.value = updated
                     if (updated.phase == MergePhase.GAME_OVER) {
@@ -117,6 +125,8 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
     private fun startGame() {
         val e = engine ?: return
         dropRequested = false
+        preDropSnapshot = null
+        _canUndo.value = false
         _state.value = e.startGame(_state.value.copy(highScore = highScore))
     }
 
@@ -124,9 +134,19 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         val e = engine ?: return
         commitHighScore(_state.value.score)
         dropRequested = false
+        preDropSnapshot = null
+        _canUndo.value = false
         val s = e.createInitialState(highScore)
         spoutX = s.spoutX
         _state.value = s
+    }
+
+    fun undo() {
+        val snapshot = preDropSnapshot ?: return
+        preDropSnapshot = null
+        _canUndo.value = false
+        val penalty = (snapshot.currentTier.ordinal + 1) * 5
+        _state.value = snapshot.copy(score = (snapshot.score - penalty).coerceAtLeast(0))
     }
 
     // ── Session preservation ────────────────────────────────────────────────
