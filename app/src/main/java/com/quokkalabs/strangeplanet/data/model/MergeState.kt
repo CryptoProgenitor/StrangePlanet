@@ -80,6 +80,12 @@ data class ConsumingOrb(
 
 enum class MergePhase { READY, PLAYING, GAME_OVER }
 
+/** Solo, or a 1v1 Bluetooth score race (each device runs its own board). */
+enum class MergeMode { SOLO, BT_HOST, BT_CLIENT }
+
+/** Outcome of a competitive match, shown on the results overlay. */
+enum class MatchResult { WIN, LOSE, TIE }
+
 data class MergeState(
     val orbs: List<Orb> = emptyList(),
     val pops: List<Pop> = emptyList(),
