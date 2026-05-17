@@ -155,6 +155,27 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         _state.value = snapshot.copy(score = (snapshot.score - penalty).coerceAtLeast(0))
     }
 
+    /**
+     * Clear the two smallest tiers from the vessel. The cost equals the merge
+     * value of everything swept (min [SWEEP_FLOOR]) so it never beats simply
+     * merging them — it buys space, never points. Single-player only.
+     */
+    fun sweep() {
+        val s = _state.value
+        if (s.phase != MergePhase.PLAYING) return
+        val swept = s.orbs.filter { it.tier in SWEEPABLE }
+        if (swept.isEmpty()) return
+        val cost = sweepCost(s.orbs)
+        if (s.score < cost) return
+        preDropSnapshot = null
+        _canUndo.value = false
+        _undoPenalty.value = 0
+        _state.value = s.copy(
+            orbs = s.orbs.filter { it.tier !in SWEEPABLE },
+            score = s.score - cost,
+        )
+    }
+
     // ── Session preservation ────────────────────────────────────────────────
 
     fun hasSavedSession(): Boolean = prefs.contains(KEY_SESSION)
@@ -229,8 +250,19 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().remove(KEY_SESSION).apply()
     }
 
-    private companion object {
-        const val KEY_HIGH_SCORE = "high_score"
-        const val KEY_SESSION = "saved_session"
+    companion object {
+        private const val KEY_HIGH_SCORE = "high_score"
+        private const val KEY_SESSION = "saved_session"
+
+        /** Tiers a sweep removes (the two smallest droppable spheres). */
+        val SWEEPABLE = setOf(MergeTier.DUST_MOTE, MergeTier.PEBBLE)
+        private const val SWEEP_FLOOR = 25
+
+        /** Point cost to sweep the current board (min [SWEEP_FLOOR]). */
+        fun sweepCost(orbs: List<Orb>): Int {
+            val raw = orbs.filter { it.tier in SWEEPABLE }
+                .sumOf { (it.tier.ordinal + 1) * 5 }
+            return maxOf(SWEEP_FLOOR, raw)
+        }
     }
 }

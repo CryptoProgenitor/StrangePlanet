@@ -36,6 +36,10 @@ class MergeEngine(
 
     private var cooldown = 0
     private var overflowTicks = 0
+    // Frames to suppress the next merge pass so cascades step visibly.
+    private var mergeCooldown = 0
+    // Frames of global slow-motion while a void consumes (cinematic).
+    private var slowmoTicks = 0
 
     fun radiusOf(tier: MergeTier): Float = tier.radiusFrac * vesselWidth
 
@@ -51,6 +55,8 @@ class MergeEngine(
     fun createInitialState(highScore: Int): MergeState {
         cooldown = 0
         overflowTicks = 0
+        mergeCooldown = 0
+        slowmoTicks = 0
         return MergeState(
             orbs = emptyList(),
             currentTier = randomDrop(),
@@ -73,10 +79,13 @@ class MergeEngine(
     fun startGame(s: MergeState): MergeState {
         cooldown = 0
         overflowTicks = 0
+        mergeCooldown = 0
+        slowmoTicks = 0
         return s.copy(
             phase = MergePhase.PLAYING,
             orbs = emptyList(),
             pops = emptyList(),
+            consuming = emptyList(),
             score = 0,
             currentTier = randomDrop(),
             nextTier = randomDrop(),
@@ -108,9 +117,17 @@ class MergeEngine(
         var mergeName = s.lastMergeName
         var voidFlash = false
 
-        // Age existing merge bursts, dropping the expired ones.
+        // Age existing merge bursts, dropping the expired ones. The void
+        // burst (big) lives much longer so its collapse is observable.
         val pops = ArrayList<Pop>(s.pops.size + 4)
-        for (p in s.pops) if (p.age + 1 < POP_MAX) pops.add(p.copy(age = p.age + 1))
+        for (p in s.pops) {
+            val cap = if (p.big) VOID_POP_MAX else POP_MAX
+            if (p.age + 1 < cap) pops.add(p.copy(age = p.age + 1))
+        }
+        // Age orbs spiralling into a forming void.
+        val consuming = ArrayList<ConsumingOrb>(s.consuming.size)
+        for (c in s.consuming) if (c.age + 1 < CONSUME_MAX) consuming.add(c.copy(age = c.age + 1))
+        if (slowmoTicks > 0) slowmoTicks--
         var currentTier = s.currentTier
         var nextTier = s.nextTier
         var upcoming = s.upcoming.ifEmpty { listOf(randomDrop(), randomDrop()) }
@@ -135,7 +152,10 @@ class MergeEngine(
         if (cooldown > 0) cooldown--
 
         // ── Integrate (2 substeps) ─────────────────────────────────────────
-        val dt = (1f / 60f) / 2f
+        // Slow-mo scales the timestep so the whole board drifts cinematically
+        // while a void is collapsing; collisions/merges still run each frame.
+        val timeScale = if (slowmoTicks > 0) 0.4f else 1f
+        val dt = (1f / 60f) / 2f * timeScale
         repeat(2) {
             for (i in orbs.indices) {
                 val o = orbs[i]
@@ -163,9 +183,15 @@ class MergeEngine(
         }
 
         // ── Merge pass ──────────────────────────────────────────────────────
+        // A short cooldown after each merge lets a cascade resolve one step
+        // at a time so each coalescence is individually visible.
+        if (mergeCooldown > 0) {
+            mergeCooldown--
+        } else {
         val merged = HashSet<Long>()
         val survivors = ArrayList<Orb>(orbs.size)
         val spawned = ArrayList<Orb>()
+        var mergedAny = false
         for (i in orbs.indices) {
             val a = orbs[i]
             if (a.id in merged) continue
@@ -190,7 +216,11 @@ class MergeEngine(
                     val my = (a.y + b.y) / 2f
                     val formed = a.tier.next
                     if (formed == MergeTier.BLACK_HOLE) {
-                        // Void Consumption — the inevitable void.
+                        // Void Consumption — the inevitable void. The pair and
+                        // everything in range spiral inward over CONSUME_MAX
+                        // frames while the world drifts in slow-motion.
+                        consuming.add(ConsumingOrb(a.tier, a.x, a.y, mx, my))
+                        consuming.add(ConsumingOrb(b.tier, b.x, b.y, mx, my))
                         val voidR = radiusOf(MergeTier.BLACK_HOLE) * 2.9f
                         var consumed = 0
                         for (k in orbs.indices) {
@@ -198,6 +228,7 @@ class MergeEngine(
                             if (c.id in merged) continue
                             if (hypot(c.x - mx, c.y - my) < voidR + radiusOf(c.tier)) {
                                 merged.add(c.id)
+                                consuming.add(ConsumingOrb(c.tier, c.x, c.y, mx, my))
                                 score += (c.tier.ordinal + 1) * 8
                                 consumed++
                             }
@@ -205,6 +236,7 @@ class MergeEngine(
                         score += 250 + consumed * 30
                         mergeName = "THE VOID CONSUMES."
                         voidFlash = true
+                        slowmoTicks = VOID_POP_MAX
                         pops.add(
                             Pop(nextOrbId(), mx, my, radiusOf(MergeTier.BLACK_HOLE),
                                 MergeTier.BLACK_HOLE, big = true),
@@ -225,6 +257,7 @@ class MergeEngine(
                         pops.add(Pop(nextOrbId(), mx, my, radiusOf(formed), formed))
                     }
                     didMerge = true
+                    mergedAny = true
                     break
                 }
             }
@@ -233,6 +266,9 @@ class MergeEngine(
         survivors.removeAll { it.id in merged }
         survivors.addAll(spawned)
         orbs = survivors
+        // Pause the next merge step so a cascade is seen, not blurred.
+        if (mergedAny) mergeCooldown = 8
+        }
 
         // ── Game over: a slow orb resting above the capacity line ──────────
         val slowAbove = orbs.any { o ->
@@ -249,6 +285,7 @@ class MergeEngine(
         s = s.copy(
             orbs = orbs,
             pops = pops,
+            consuming = consuming,
             score = score,
             currentTier = currentTier,
             nextTier = nextTier,

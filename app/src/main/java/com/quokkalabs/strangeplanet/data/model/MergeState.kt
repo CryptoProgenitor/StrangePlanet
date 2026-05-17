@@ -48,8 +48,14 @@ data class Orb(
     val omega: Float = 0f,
 )
 
-/** Lifetime (frames) of a merge burst effect. */
-const val POP_MAX = 16
+/** Lifetime (frames) of a regular merge burst effect. */
+const val POP_MAX = 26
+
+/** Lifetime (frames) of the dramatic Void-Consumption burst. */
+const val VOID_POP_MAX = 54
+
+/** Frames an orb takes to spiral into the forming void. */
+const val CONSUME_MAX = 48
 
 /** Transient visual burst spawned at a merge point. Pure cosmetic. */
 data class Pop(
@@ -62,11 +68,22 @@ data class Pop(
     val age: Int = 0,
 )
 
+/** An orb being drawn into a forming black hole (Void Consumption). */
+data class ConsumingOrb(
+    val tier: MergeTier,
+    val startX: Float,
+    val startY: Float,
+    val cx: Float,
+    val cy: Float,
+    val age: Int = 0,
+)
+
 enum class MergePhase { READY, PLAYING, GAME_OVER }
 
 data class MergeState(
     val orbs: List<Orb> = emptyList(),
     val pops: List<Pop> = emptyList(),
+    val consuming: List<ConsumingOrb> = emptyList(),
     val currentTier: MergeTier = MergeTier.DUST_MOTE,
     val nextTier: MergeTier = MergeTier.PEBBLE,
     /** The two tiers queued after [nextTier] — the "upcoming" column preview. */

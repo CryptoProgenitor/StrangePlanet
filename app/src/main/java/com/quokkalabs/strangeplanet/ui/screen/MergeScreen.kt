@@ -61,11 +61,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.quokkalabs.strangeplanet.data.model.CONSUME_MAX
+import com.quokkalabs.strangeplanet.data.model.ConsumingOrb
 import com.quokkalabs.strangeplanet.data.model.MergePhase
 import com.quokkalabs.strangeplanet.data.model.MergeTier
 import com.quokkalabs.strangeplanet.data.model.Orb
 import com.quokkalabs.strangeplanet.data.model.POP_MAX
 import com.quokkalabs.strangeplanet.data.model.Pop
+import com.quokkalabs.strangeplanet.data.model.VOID_POP_MAX
 import kotlin.math.cos
 import kotlin.math.sin
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
@@ -94,6 +97,11 @@ fun MergeScreen(
     var showResume by remember { mutableStateOf(viewModel.hasSavedSession()) }
     var showSolarSystem by remember { mutableStateOf(false) }
     var showUndoConfirm by remember { mutableStateOf(false) }
+    var showSweepConfirm by remember { mutableStateOf(false) }
+
+    val sweepCost = MergeViewModel.sweepCost(state.orbs)
+    val canSweep = state.orbs.any { it.tier in MergeViewModel.SWEEPABLE } &&
+        state.score >= sweepCost
 
     fun attemptBack() {
         if (state.phase == MergePhase.PLAYING) {
@@ -106,7 +114,9 @@ fun MergeScreen(
 
     BackHandler { attemptBack() }
 
-    val blockInput by rememberUpdatedState(showExit || showResume || showSolarSystem || showUndoConfirm)
+    val blockInput by rememberUpdatedState(
+        showExit || showResume || showSolarSystem || showUndoConfirm || showSweepConfirm,
+    )
 
     LaunchedEffect(blockInput) { viewModel.setPaused(blockInput) }
 
@@ -174,6 +184,11 @@ fun MergeScreen(
                     state.orbs.forEach { o ->
                         val r = o.tier.radiusFrac * (state.vesselRight - state.vesselLeft)
                         drawOrb(o, r)
+                    }
+
+                    // Orbs spiralling into a forming void
+                    state.consuming.forEach {
+                        drawConsuming(it, state.vesselRight - state.vesselLeft)
                     }
 
                     // Merge bursts (drawn on top of everything)
@@ -298,6 +313,22 @@ fun MergeScreen(
                     }
                 }
 
+                // ── Sweep FAB ──────────────────────────────────────────────
+                if (state.phase == MergePhase.PLAYING) {
+                    FloatingActionButton(
+                        onClick = { if (canSweep) showSweepConfirm = true },
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(bottom = 20.dp, start = 14.dp)
+                            .size(44.dp),
+                        shape = CircleShape,
+                        containerColor = DeepNavy.copy(alpha = if (canSweep) 0.75f else 0.35f),
+                        contentColor = AlienPink.copy(alpha = if (canSweep) 1f else 0.3f),
+                    ) {
+                        Text("✦", fontSize = 18.sp)
+                    }
+                }
+
                 // ── Solar system reference modal ───────────────────────────
                 if (showSolarSystem) {
                     SolarSystemModal(onDismiss = { showSolarSystem = false })
@@ -309,6 +340,15 @@ fun MergeScreen(
                         penalty = undoPenalty,
                         onConfirm = { viewModel.undo(); showUndoConfirm = false },
                         onCancel = { showUndoConfirm = false },
+                    )
+                }
+
+                // ── Sweep confirmation ─────────────────────────────────────
+                if (showSweepConfirm) {
+                    SweepConfirmDialog(
+                        cost = sweepCost,
+                        onConfirm = { viewModel.sweep(); showSweepConfirm = false },
+                        onCancel = { showSweepConfirm = false },
                     )
                 }
 
@@ -623,8 +663,23 @@ private fun DrawScope.drawNeutronCore(o: Orb, r: Float, a: Float) {
     drawCircle(Color(0xFFCBE9FF).copy(alpha = 0.55f * a), r * 0.70f, Offset(o.x, o.y))
 }
 
+private fun DrawScope.drawConsuming(c: ConsumingOrb, vesselWidth: Float) {
+    val t = (c.age / CONSUME_MAX.toFloat()).coerceIn(0f, 1f)
+    // Accelerate inward (ease-in) and spiral around the void centre.
+    val pull = t * t
+    val baseR = c.tier.radiusFrac * vesselWidth
+    val ang = t * 6.2832f * 1.5f
+    val swirl = (1f - pull) * baseR * 1.4f
+    val x = c.startX + (c.cx - c.startX) * pull + cos(ang) * swirl
+    val y = c.startY + (c.cy - c.startY) * pull + sin(ang) * swirl
+    val r = baseR * (1f - pull)
+    if (r < 0.5f) return
+    drawOrb(Orb(-2L, c.tier, x, y), r, alphaMul = (1f - t * 0.4f))
+}
+
 private fun DrawScope.drawPop(p: Pop) {
-    val t = (p.age / POP_MAX.toFloat()).coerceIn(0f, 1f)
+    val maxAge = if (p.big) VOID_POP_MAX else POP_MAX
+    val t = (p.age / maxAge.toFloat()).coerceIn(0f, 1f)
     val ease = 1f - (1f - t) * (1f - t)        // fast then settle
     val fade = 1f - t
     val center = Offset(p.x, p.y)
@@ -782,6 +837,76 @@ private fun DisposableEdgeToEdge(view: android.view.View) {
             if (window != null) {
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+}
+
+@Composable
+private fun SweepConfirmDialog(
+    cost: Int,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false).consume()
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .fillMaxWidth(0.8f)
+                .background(DeepNavy.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 24.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "SWEEP SMALL SPHERES?",
+                color = AlienPink,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Clears the two smallest tiers.\nCosts $cost points.",
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    "Cancel",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .clickable(onClick = onCancel)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
+                Text(
+                    "Sweep (−$cost)",
+                    color = AlienPink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable(onClick = onConfirm)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                )
             }
         }
     }
