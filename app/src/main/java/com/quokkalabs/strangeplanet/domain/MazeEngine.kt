@@ -202,43 +202,43 @@ class MazeEngine(
             } ?: PacDir.NONE
     }
 
-    // First legal non-reversing move (corner fallback for a steered seeker so
-    // it never deadlocks when the adversary holds an impossible direction).
-    private fun firstLegalDir(col: Int, row: Int, current: PacDir): PacDir {
-        val opposite = current.opposite()
-        return listOf(PacDir.UP, PacDir.LEFT, PacDir.DOWN, PacDir.RIGHT)
-            .firstOrNull { d ->
-                d != opposite && !isWall(wrapCol(col + d.dc, row), row + d.dr)
-            } ?: PacDir.NONE
-    }
-
-    // Human-steered seeker (adversary being). Mirrors the being's control feel:
-    // queued turn adopted at tile centres, mid-tile reversal allowed; falls back
-    // to any legal turn so a held wall-ward input cannot freeze it mid-maze.
+    // Human-steered seeker (adversary being). EXACT mirror of the being's
+    // control law in updatePlaying(): no input (PacDir.NONE) halts instantly
+    // exactly as haltBeing() zeroes being.dir; queued turn adopted at tile
+    // centres; mid-tile reversal always legal; a held wall-ward input stops
+    // at the wall — never any autopilot. `want` is the persisted client
+    // heading (the transport keeps it set, mirroring being.queuedDir).
     private fun movePlayerSeeker(
         s: SeekerEntity,
         want: PacDir,
         speed: Float,
         mode: SeekerMode,
     ): SeekerEntity {
+        // Finger lifted / dpad dead-zone: full stop, like haltBeing().
+        if (want == PacDir.NONE) {
+            return s.copy(dir = PacDir.NONE, progress = 0f, mode = mode)
+        }
+
         var col = s.col
         var row = s.row
         var dir = s.dir
+        var queued = want
         var progress = s.progress
 
+        // Standing still: launch straight into the wanted direction.
         if (dir == PacDir.NONE) {
-            dir = if (want != PacDir.NONE &&
-                !isWall(wrapCol(col + want.dc, row), row + want.dr)
-            ) {
-                want
+            if (!isWall(wrapCol(col + queued.dc, row), row + queued.dr)) {
+                dir = queued
+                queued = PacDir.NONE
             } else {
-                firstLegalDir(col, row, PacDir.NONE)
+                return s.copy(dir = PacDir.NONE, progress = 0f, mode = mode)
             }
-            if (dir == PacDir.NONE) return s.copy(mode = mode)
         }
 
-        if (want != PacDir.NONE && want == dir.opposite()) {
-            dir = want
+        // Mid-tile reversal is always legal (no wall check needed).
+        if (queued != PacDir.NONE && queued == dir.opposite()) {
+            dir = queued
+            queued = PacDir.NONE
             progress = 1f - progress
         }
 
@@ -248,19 +248,16 @@ class MazeEngine(
             row += dir.dr
             progress -= 1f
 
-            if (want != PacDir.NONE && want != dir.opposite() &&
-                !isWall(wrapCol(col + want.dc, row), row + want.dr)
+            // At the centre: prefer the wanted turn, else continue, else stop.
+            if (queued != PacDir.NONE &&
+                !isWall(wrapCol(col + queued.dc, row), row + queued.dr)
             ) {
-                dir = want
+                dir = queued
+                queued = PacDir.NONE
             } else if (isWall(wrapCol(col + dir.dc, row), row + dir.dr)) {
-                val alt = firstLegalDir(col, row, dir)
-                if (alt != PacDir.NONE) {
-                    dir = alt
-                } else {
-                    dir = PacDir.NONE
-                    progress = 0f
-                    break
-                }
+                dir = PacDir.NONE
+                progress = 0f
+                break
             }
         }
         return s.copy(col = col, row = row, dir = dir, progress = progress, mode = mode)
@@ -305,12 +302,10 @@ class MazeEngine(
             else -> BASE_SPEED * 0.80f * (1f + (level - 1) * 0.05f)
         }
 
-        // Adversary-steered seeker: only while it can actively hunt. When
-        // FRIGHTENED (fleeing) or EATEN (returning home) it reverts to the
-        // automatic behaviour so the chase/recovery resolves predictably.
-        if (humanControlled &&
-            (effectiveMode == SeekerMode.SCATTER || effectiveMode == SeekerMode.CHASE)
-        ) {
+        // Adversary-steered seeker: player has the being's exact control law
+        // whenever it can act (SCATTER/CHASE/FRIGHTENED). EATEN is a recovery
+        // state with no being equivalent — eyes auto-return to the pen.
+        if (humanControlled && effectiveMode != SeekerMode.EATEN) {
             return movePlayerSeeker(s, humanDir, speed, effectiveMode)
         }
 
