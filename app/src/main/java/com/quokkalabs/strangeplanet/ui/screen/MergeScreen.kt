@@ -106,7 +106,7 @@ fun MergeScreen(
 
     BackHandler { attemptBack() }
 
-    val blockInput by rememberUpdatedState(showExit || showResume)
+    val blockInput by rememberUpdatedState(showExit || showResume || showSolarSystem || showUndoConfirm)
 
     LaunchedEffect(blockInput) { viewModel.setPaused(blockInput) }
 
@@ -137,11 +137,12 @@ fun MergeScreen(
                             while (true) {
                                 val event = awaitPointerEvent()
                                 val ch = event.changes.firstOrNull() ?: break
-                                viewModel.onAim(ch.position.x)
                                 ch.consume()
+                                if (blockInput) break
+                                viewModel.onAim(ch.position.x)
                                 if (!ch.pressed) break
                             }
-                            if (!inSystemZone) viewModel.onRelease()
+                            if (!inSystemZone && !blockInput) viewModel.onRelease()
                         }
                     },
             ) {
