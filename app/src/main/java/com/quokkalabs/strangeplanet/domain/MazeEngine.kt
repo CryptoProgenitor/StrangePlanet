@@ -245,7 +245,7 @@ class MazeEngine(
         progress += speed
         while (progress >= 1f) {
             col = wrapCol(col + dir.dc, row)
-            row += dir.dr
+            row = (row + dir.dr).coerceIn(0, rows - 1)
             progress -= 1f
 
             // At the centre: prefer the wanted turn, else continue, else stop.
@@ -330,7 +330,7 @@ class MazeEngine(
 
         while (progress >= 1f) {
             col = wrapCol(col + dir.dc, row)
-            row += dir.dr
+            row = (row + dir.dr).coerceIn(0, rows - 1)
             progress -= 1f
 
             // EATEN eyes that reach the home tile: body instantly restored,
@@ -353,6 +353,11 @@ class MazeEngine(
             else
                 seekerChooseDir(midS, tc, tr)
             if (nextDir != PacDir.NONE) dir = nextDir
+            else if (isWall(wrapCol(col + dir.dc, row), row + dir.dr)) {
+                dir = PacDir.NONE
+                progress = 0f
+                break
+            }
         }
 
         return s.copy(col = col, row = row, dir = dir, progress = progress, mode = effectiveMode)
