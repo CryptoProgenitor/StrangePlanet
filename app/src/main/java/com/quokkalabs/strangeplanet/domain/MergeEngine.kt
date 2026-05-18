@@ -4,8 +4,11 @@ import com.quokkalabs.strangeplanet.data.model.MergePhase
 import com.quokkalabs.strangeplanet.data.model.MergeState
 import com.quokkalabs.strangeplanet.data.model.MergeTier
 import com.quokkalabs.strangeplanet.data.model.Orb
+import com.quokkalabs.strangeplanet.data.model.CONSUME_MAX
+import com.quokkalabs.strangeplanet.data.model.ConsumingOrb
 import com.quokkalabs.strangeplanet.data.model.POP_MAX
 import com.quokkalabs.strangeplanet.data.model.Pop
+import com.quokkalabs.strangeplanet.data.model.VOID_POP_MAX
 import com.quokkalabs.strangeplanet.data.model.nextOrbId
 import kotlin.math.hypot
 import kotlin.random.Random
