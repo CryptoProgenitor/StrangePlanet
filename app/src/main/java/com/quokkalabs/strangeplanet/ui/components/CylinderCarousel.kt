@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -73,10 +74,7 @@ fun CylinderCarousel(
     val cutoff = (step * 2.5f).coerceAtMost(160f)
     // Pixels of horizontal drag that equal one degree of rotation.
     val dragPerDeg = with(density) { 3.6.dp.toPx() }
-    val radiusPx = with(density) { (cardWidth * 1.3f).toPx() }
-    // Must be large relative to the card or the perspective projection
-    // degenerates and the card vanishes.
-    val cameraPx = with(density) { cardHeight.toPx() * 2.5f }
+    val aspect = cardWidth / cardHeight
 
     // Drum rotation, in degrees. The card nearest a multiple of `step` is
     // the focused one (its angle ≈ 0).
@@ -91,7 +89,7 @@ fun CylinderCarousel(
     val focused by remember { derivedStateOf { focusedOf(angle.value) } }
     LaunchedEffect(focused) { onFocusedChange(focused) }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .pointerInput(count) {
                 val tracker = VelocityTracker()
@@ -124,6 +122,19 @@ fun CylinderCarousel(
             },
         contentAlignment = Alignment.Center,
     ) {
+        // Shrink the card to fit short / narrow screens: cap height at a
+        // fraction of the available band (headroom for the -6° tilt + 1.07×
+        // pop) and width at a fraction of the band so side cards stay on
+        // screen. Whichever limit bites, the other follows the aspect ratio
+        // so the card never distorts and never bleeds into the title above
+        // or the info panel below.
+        val effH0 = cardHeight.coerceAtMost(maxHeight * 0.84f)
+        val effW = (effH0 * aspect).coerceAtMost(maxWidth * 0.58f)
+        val effH = effW / aspect
+        val radiusPx = with(density) { (effW * 1.3f).toPx() }
+        // Must be large relative to the card or the perspective projection
+        // degenerates and the card vanishes.
+        val cameraPx = with(density) { effH.toPx() * 2.5f }
         for (i in 0 until count) {
             // theta: this card's angle on the drum relative to the viewer.
             var theta = i * step - angle.value
@@ -140,7 +151,7 @@ fun CylinderCarousel(
 
             Box(
                 modifier = Modifier
-                    .size(cardWidth, cardHeight)
+                    .size(effW, effH)
                     .zIndex(cos(rad))
                     .graphicsLayer {
                         // Slight "viewed from above" tilt, applied per small
