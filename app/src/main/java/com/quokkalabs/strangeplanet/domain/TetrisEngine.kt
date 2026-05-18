@@ -268,9 +268,7 @@ class TetrisEngine {
 
     /** Called after the CLEARING animation to actually remove the rows and spawn next piece. */
     fun applyClear(state: TetrisState): TetrisState {
-        val (clearedGrid, _) = clearLines(lockPiece(state.grid, state.active
-            ?: return state.copy(phase = TetrisPhase.PLAYING, clearingRows = emptyList())))
-        // Actually grid was already locked before CLEARING — just apply the stored cleared-rows removal
+        // Grid was already locked before CLEARING — remove the stored cleared rows directly.
         val kept = state.grid.filterIndexed { r, _ -> r !in state.clearingRows }
         val empties = List(state.clearingRows.size) { List(COLS) { null } }
         val newGrid = empties + kept
