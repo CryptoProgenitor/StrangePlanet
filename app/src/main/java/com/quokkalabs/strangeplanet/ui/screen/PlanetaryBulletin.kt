@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quokkalabs.strangeplanet.ui.components.AmbientPoster
@@ -50,7 +51,8 @@ import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 
 private class Destination(
     val title: String,
-    val subtitle: String,
+    val blurb: String,
+    val record: String?,
     val icon: String,
     val onClick: () -> Unit,
     val poster: @Composable () -> Unit,
@@ -96,47 +98,59 @@ fun PlanetaryBulletin(
     ) {
         listOf(
             Destination(
-                "Sphere Deflection", "Competitive paddle activity", "🏓",
+                "Sphere Deflection",
+                "Deflect the luminous sphere past your\nopponent's defensive appendage.",
+                null,
+                "🏓",
                 onNavigateToGame,
             ) { PongPoster() },
             Destination(
-                "Descending Entity Defence", "Neutralise hostile creatures", "👾",
+                "Descending Entity Defence",
+                "Repel the descending swarm before it\nreaches the planet's fragile surface.",
+                null,
+                "👾",
                 onNavigateToSpaceInvaders,
             ) { InvadersPoster() },
             Destination(
                 "Sustenance Pursuit",
-                if (pacHighScore > 0) "Record: $pacHighScore sustenance"
-                else "Consume stars; evade perished beings",
+                "Consume every star-morsel while evading\nthe perished beings roaming the lattice.",
+                if (pacHighScore > 0) "Record · $pacHighScore sustenance" else null,
                 "🟡",
                 onNavigateToPacman,
             ) { PacPoster() },
             Destination(
                 "Spatial Debris Avoidance",
-                if (asteroidHighScore > 0) "Record: $asteroidHighScore debris neutralised"
-                else "Neutralise drifting fabric tubes",
+                "Pilot the vessel and fragment the drifting\nfabric tubes before they strike you.",
+                if (asteroidHighScore > 0) "Record · $asteroidHighScore debris neutralised" else null,
                 "🌀",
                 onNavigateToAsteroids,
             ) { AsteroidPoster() },
             Destination(
                 "Strange Match",
-                if (strangeMatchHighScore > 0) "Record: $strangeMatchHighScore matches"
-                else "Swap strange beings; match 3 or more",
+                "Swap adjacent strange beings to align\nthree or more of identical form.",
+                if (strangeMatchHighScore > 0) "Record · $strangeMatchHighScore matches" else null,
                 "🍬",
                 onNavigateToStrangeMatch,
             ) { StrangeMatchPoster() },
             Destination(
                 "Spherical Agglomeration",
-                if (mergeHighScore > 0) "Record: $mergeHighScore mass accumulated"
-                else "Coalesce spheres; form the void",
+                "Coalesce like spheres into greater mass\nuntil the void itself takes shape.",
+                if (mergeHighScore > 0) "Record · $mergeHighScore mass accumulated" else null,
                 "🪐",
                 onNavigateToMerge,
             ) { MergePoster() },
             Destination(
-                "Ambient Decoration", "Animate your device surface", "🎨",
+                "Ambient Decoration",
+                "Adorn your device surface with a slowly\nrotating ringed world and drifting stars.",
+                null,
+                "🎨",
                 onNavigateToSettings,
             ) { AmbientPoster() },
             Destination(
-                "Creature Interaction", "Observe and stimulate beings", "👽",
+                "Creature Interaction",
+                "Return to the surface to observe and\ngently stimulate the local beings.",
+                null,
+                "👽",
                 onDismiss,
             ) { CreaturePoster() },
         )
@@ -197,7 +211,10 @@ fun PlanetaryBulletin(
                 label = "info",
             ) { idx ->
                 val d = destinations[idx]
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Text(
                         text = d.title,
                         color = AlienPink,
@@ -205,12 +222,39 @@ fun PlanetaryBulletin(
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     )
+                    // Always exactly two lines — minLines + maxLines fixes the
+                    // block height regardless of density or screen width, so
+                    // the ENGAGE button never shifts as cards crossfade.
                     Text(
-                        text = d.subtitle,
+                        text = d.blurb,
                         color = Color.White.copy(alpha = 0.55f),
                         fontSize = 13.sp,
+                        lineHeight = 18.sp,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp),
+                        minLines = 2,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp, start = 32.dp, end = 32.dp),
+                    )
+                    // Single reserved line: the record if one exists, otherwise
+                    // a faint prompt. Constant height keeps the layout stable.
+                    Text(
+                        text = d.record ?: "Awaiting first attempt",
+                        color = if (d.record != null) {
+                            AlienPink.copy(alpha = 0.85f)
+                        } else {
+                            Color.White.copy(alpha = 0.28f)
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = if (d.record != null) FontWeight.SemiBold else FontWeight.Normal,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp, start = 24.dp, end = 24.dp),
                     )
                 }
             }
