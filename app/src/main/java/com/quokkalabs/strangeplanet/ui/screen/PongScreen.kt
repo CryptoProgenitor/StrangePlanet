@@ -965,7 +965,24 @@ private fun BluetoothLobby(
 
             else -> when (btState.connectionState) {
                 BtConnectionState.IDLE -> {
-                    // Quick reconnect to previous adversaries
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LobbyButton("Broadcast\nPresence") { onHost() }
+                        LobbyButton("Detect\nBeings") { onScan() }
+                    }
+                }
+
+                BtConnectionState.HOSTING -> {
+                    Text(
+                        "Broadcasting presence...\nAwaiting distant being...",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    LobbyButton("Cancel") { onDisconnect() }
+                }
+
+                BtConnectionState.SCANNING -> {
                     if (btState.recentDevices.isNotEmpty()) {
                         Text(
                             "Previous adversaries:",
@@ -983,25 +1000,14 @@ private fun BluetoothLobby(
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp)
                                     .clickable { onConnect(d.address) }
-                                    .background(
-                                        AlienPink.copy(alpha = 0.15f),
-                                        RoundedCornerShape(8.dp),
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                                    .background(AlienPink.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                                 textAlign = TextAlign.Center,
                             )
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(8.dp))
                     }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        LobbyButton("Broadcast\nPresence") { onHost() }
-                        LobbyButton("Detect\nBeings") { onScan() }
-                    }
-
-                    // Paired devices
                     if (btState.pairedDevices.isNotEmpty()) {
-                        Spacer(Modifier.height(12.dp))
                         Text(
                             "Known Beings:",
                             color = Color.White.copy(alpha = 0.4f),
@@ -1015,39 +1021,21 @@ private fun BluetoothLobby(
                                 fontSize = 13.sp,
                                 modifier = Modifier
                                     .clickable { onConnect(device.address) }
-                                    .background(
-                                        Color.White.copy(alpha = 0.08f),
-                                        RoundedCornerShape(8.dp),
-                                    )
+                                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
                                     .padding(horizontal = 12.dp, vertical = 6.dp)
                                     .fillMaxWidth(),
                                 textAlign = TextAlign.Center,
                             )
                             Spacer(Modifier.height(4.dp))
                         }
+                        Spacer(Modifier.height(8.dp))
                     }
-                }
-
-                BtConnectionState.HOSTING -> {
-                    Text(
-                        "Broadcasting presence...\nAwaiting distant being...",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    LobbyButton("Cancel") { onDisconnect() }
-                }
-
-                BtConnectionState.SCANNING -> {
                     Text(
                         "Scanning for beings...",
                         color = Color.White.copy(alpha = 0.6f),
                         fontSize = 13.sp,
                     )
                     Spacer(Modifier.height(6.dp))
-
-                    // Discovered devices
                     btState.discoveredDevices.forEach { device ->
                         Text(
                             text = device.name,
@@ -1055,45 +1043,13 @@ private fun BluetoothLobby(
                             fontSize = 13.sp,
                             modifier = Modifier
                                 .clickable { onConnect(device.address) }
-                                .background(
-                                    Color.White.copy(alpha = 0.08f),
-                                    RoundedCornerShape(8.dp),
-                                )
+                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
                                 .padding(horizontal = 12.dp, vertical = 12.dp)
                                 .fillMaxWidth(),
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(4.dp))
                     }
-
-                    // Paired devices
-                    if (btState.pairedDevices.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Known Beings:",
-                            color = Color.White.copy(alpha = 0.4f),
-                            fontSize = 11.sp,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        btState.pairedDevices.forEach { device ->
-                            Text(
-                                text = device.name,
-                                color = SoftPink.copy(alpha = 0.7f),
-                                fontSize = 13.sp,
-                                modifier = Modifier
-                                    .clickable { onConnect(device.address) }
-                                    .background(
-                                        Color.White.copy(alpha = 0.05f),
-                                        RoundedCornerShape(8.dp),
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    .fillMaxWidth(),
-                                textAlign = TextAlign.Center,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                        }
-                    }
-
                     Spacer(Modifier.height(6.dp))
                     LobbyButton("Stop") { onStopScan() }
                 }

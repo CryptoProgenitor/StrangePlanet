@@ -205,15 +205,17 @@ fun MergeScreen(
                     if (state.phase == MergePhase.PLAYING) {
                         val r = state.currentTier.radiusFrac * (state.vesselRight - state.vesselLeft)
                         val gx = state.spoutX
+                        val dashLen = with(density) { 14.dp.toPx() }
+                        val dashGap = with(density) { 24.dp.toPx() }
                         var gy = state.vesselTop
                         while (gy < state.vesselBottom) {
                             drawLine(
                                 color = Color.White.copy(alpha = 0.12f),
                                 start = Offset(gx, gy),
-                                end = Offset(gx, (gy + 14f).coerceAtMost(state.vesselBottom)),
+                                end = Offset(gx, (gy + dashLen).coerceAtMost(state.vesselBottom)),
                                 strokeWidth = 2f,
                             )
-                            gy += 24f
+                            gy += dashGap
                         }
                         drawOrb(
                             Orb(-1L, state.currentTier, gx, state.vesselTop - r - 4f),
@@ -1034,30 +1036,6 @@ private fun BoxScope.MergeBtLobby(
                             LobbyPill("Broadcast") { onHost() }
                             LobbyPill("Detect") { onScan() }
                         }
-                        if (btState.recentDevices.isNotEmpty()) {
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                "Previous adversaries:",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 11.sp,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            btState.recentDevices.forEach { d ->
-                                DeviceRow(d.name) { onConnect(d.address) }
-                            }
-                        }
-                        if (btState.pairedDevices.isNotEmpty()) {
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                "Known beings:",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 11.sp,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            btState.pairedDevices.forEach { d ->
-                                DeviceRow(d.name) { onConnect(d.address) }
-                            }
-                        }
                     }
 
                     BtConnectionState.HOSTING -> {
@@ -1072,6 +1050,30 @@ private fun BoxScope.MergeBtLobby(
                     }
 
                     BtConnectionState.SCANNING -> {
+                        if (btState.recentDevices.isNotEmpty()) {
+                            Text(
+                                "Previous adversaries:",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 11.sp,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            btState.recentDevices.forEach { d ->
+                                DeviceRow(d.name) { onConnect(d.address) }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (btState.pairedDevices.isNotEmpty()) {
+                            Text(
+                                "Known beings:",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 11.sp,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            btState.pairedDevices.forEach { d ->
+                                DeviceRow(d.name) { onConnect(d.address) }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
                         Text(
                             "Scanning for beings…",
                             color = Color.White.copy(alpha = 0.6f),
@@ -1079,9 +1081,6 @@ private fun BoxScope.MergeBtLobby(
                         )
                         Spacer(Modifier.height(6.dp))
                         btState.discoveredDevices.forEach { d ->
-                            DeviceRow(d.name) { onConnect(d.address) }
-                        }
-                        btState.pairedDevices.forEach { d ->
                             DeviceRow(d.name) { onConnect(d.address) }
                         }
                         Spacer(Modifier.height(6.dp))
@@ -1332,24 +1331,39 @@ private fun ForfeitConfirmDialog(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    "Keep Playing",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 14.sp,
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
                     modifier = Modifier
-                        .clickable(onClick = onCancel)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                )
-                Text(
-                    "Forfeit",
-                    color = AlienPink,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(AlienPink.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
                         .clickable(onClick = onConfirm)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                )
+                        .padding(vertical = 13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Forfeit",
+                        color = AlienPink,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
+                        .clickable(onClick = onCancel)
+                        .padding(vertical = 13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Keep Playing",
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 14.sp,
+                    )
+                }
             }
         }
     }
@@ -1400,26 +1414,39 @@ private fun SweepConfirmDialog(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    "Cancel",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 14.sp,
+                Box(
                     modifier = Modifier
-                        .clickable(onClick = onCancel)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                )
-                Text(
-                    "Sweep (−$cost)",
-                    color = AlienPink,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(AlienPink.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
                         .clickable(onClick = onConfirm)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                )
+                        .padding(vertical = 13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Sweep (−$cost)",
+                        color = AlienPink,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
+                        .clickable(onClick = onCancel)
+                        .padding(vertical = 13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Cancel",
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 14.sp,
+                    )
+                }
             }
         }
     }
@@ -1470,26 +1497,39 @@ private fun UndoConfirmDialog(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    "Cancel",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 14.sp,
+                Box(
                     modifier = Modifier
-                        .clickable(onClick = onCancel)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                )
-                Text(
-                    "Undo (−$penalty)",
-                    color = AlienPink,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(AlienPink.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
                         .clickable(onClick = onConfirm)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                )
+                        .padding(vertical = 13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Undo (−$penalty)",
+                        color = AlienPink,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
+                        .clickable(onClick = onCancel)
+                        .padding(vertical = 13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Cancel",
+                        color = Color.White.copy(alpha = 0.5f),
+                        fontSize = 14.sp,
+                    )
+                }
             }
         }
     }

@@ -1102,30 +1102,6 @@ private fun PacBtLobby(
                         PacLobbyButton("Broadcast\nPresence") { onHost() }
                         PacLobbyButton("Detect\nBeings") { onScan() }
                     }
-                    if (btState.recentDevices.isNotEmpty()) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "Previous Adversaries:",
-                            color = Color.White.copy(alpha = 0.4f),
-                            fontSize = 11.sp,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        btState.recentDevices.forEach { d ->
-                            DeviceRow(d.name) { onConnect(d.address) }
-                        }
-                    }
-                    if (btState.pairedDevices.isNotEmpty()) {
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "Known Beings:",
-                            color = Color.White.copy(alpha = 0.4f),
-                            fontSize = 11.sp,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        btState.pairedDevices.forEach { d ->
-                            DeviceRow(d.name) { onConnect(d.address) }
-                        }
-                    }
                 }
 
                 BtConnectionState.HOSTING -> {
@@ -1140,6 +1116,30 @@ private fun PacBtLobby(
                 }
 
                 BtConnectionState.SCANNING -> {
+                    if (btState.recentDevices.isNotEmpty()) {
+                        Text(
+                            "Previous Adversaries:",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        btState.recentDevices.forEach { d ->
+                            DeviceRow(d.name) { onConnect(d.address) }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    if (btState.pairedDevices.isNotEmpty()) {
+                        Text(
+                            "Known Beings:",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        btState.pairedDevices.forEach { d ->
+                            DeviceRow(d.name) { onConnect(d.address) }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Text(
                         "Scanning for beings...",
                         color = Color.White.copy(alpha = 0.6f),
@@ -1147,9 +1147,6 @@ private fun PacBtLobby(
                     )
                     Spacer(Modifier.height(6.dp))
                     btState.discoveredDevices.forEach { d ->
-                        DeviceRow(d.name) { onConnect(d.address) }
-                    }
-                    btState.pairedDevices.forEach { d ->
                         DeviceRow(d.name) { onConnect(d.address) }
                     }
                     Spacer(Modifier.height(6.dp))

@@ -78,13 +78,13 @@ class MazeEngine(
         }
     }
 
-    private val tileSize: Float = run {
+    val tileSize: Float = run {
         val byWidth = screenWidth / cols
         val byHeight = (screenHeight * 0.88f) / rows
         minOf(byWidth, byHeight)
     }
-    private val originX: Float = (screenWidth - tileSize * cols) / 2f
-    private val originY: Float = (screenHeight - tileSize * rows) / 2f
+    val originX: Float = (screenWidth - tileSize * cols) / 2f
+    val originY: Float = (screenHeight - tileSize * rows) / 2f
 
     // Reachable pen target that EATEN seekers return to (the being spawn).
     private val penCol: Int
