@@ -2,7 +2,7 @@ package com.quokkalabs.strangeplanet.data.model
 
 enum class TetroType { I, O, T, S, Z, J, L }
 
-enum class TetrisPhase { IDLE, PLAYING, LOCKING, CLEARING, GAME_OVER }
+enum class TetrisPhase { IDLE, PLAYING, LOCKING, CLEARING, PAUSED, GAME_OVER }
 
 data class Tetromino(
     val type: TetroType,

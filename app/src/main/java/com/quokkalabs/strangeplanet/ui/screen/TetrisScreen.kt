@@ -5,21 +5,24 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,9 +30,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -45,9 +46,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import com.quokkalabs.strangeplanet.data.model.TetrisPhase
 import com.quokkalabs.strangeplanet.data.model.TetroType
 import com.quokkalabs.strangeplanet.domain.TetrisEngine
@@ -56,7 +54,7 @@ import com.quokkalabs.strangeplanet.ui.viewmodel.TetrisViewModel
 import kotlin.math.abs
 import kotlin.math.min
 
-// ── Tetromino colours (Strange Planet palette) ────────────────────────────────
+// ── Tetromino colours ─────────────────────────────────────────────────────────
 
 private fun TetroType.toColor() = when (this) {
     TetroType.I -> Color(0xFF00E5FF)
@@ -68,12 +66,9 @@ private fun TetroType.toColor() = when (this) {
     TetroType.L -> Color(0xFFFFB347)
 }
 
-// ── Block draw helper ─────────────────────────────────────────────────────────
-
 private fun DrawScope.drawCell(color: Color, x: Float, y: Float, sz: Float, alpha: Float = 1f) {
     val inset = sz * 0.05f
     val inner = sz - inset * 2f
-    val corner = CornerRadius(sz * 0.18f, sz * 0.18f)
     drawRoundRect(
         brush = Brush.radialGradient(
             listOf(
@@ -86,73 +81,9 @@ private fun DrawScope.drawCell(color: Color, x: Float, y: Float, sz: Float, alph
         ),
         topLeft = Offset(x + inset, y + inset),
         size = Size(inner, inner),
-        cornerRadius = corner,
+        cornerRadius = CornerRadius(sz * 0.18f, sz * 0.18f),
     )
 }
-
-// ── Press-and-hold button ─────────────────────────────────────────────────────
-
-@Composable
-private fun HoldButton(
-    label: String,
-    modifier: Modifier = Modifier,
-    onDown: () -> Unit = {},
-    onUp: () -> Unit = {},
-) {
-    var pressed by remember { mutableStateOf(false) }
-    Box(
-        modifier = modifier
-            .background(
-                if (pressed) AlienPink.copy(alpha = 0.30f) else AlienPink.copy(alpha = 0.12f),
-                RoundedCornerShape(14.dp),
-            )
-            .pointerInput(Unit) {
-                while (true) {
-                    awaitPointerEventScope {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        down.consume()
-                        pressed = true
-                        onDown()
-                        do {
-                            val ev = awaitPointerEvent()
-                        } while (ev.changes.any { it.pressed })
-                        pressed = false
-                        onUp()
-                    }
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = if (pressed) AlienPink else AlienPink.copy(0.65f), fontSize = 22.sp)
-    }
-}
-
-@Composable
-private fun TapButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    var pressed by remember { mutableStateOf(false) }
-    Box(
-        modifier = modifier
-            .background(
-                if (pressed) AlienPink.copy(alpha = 0.30f) else AlienPink.copy(alpha = 0.12f),
-                RoundedCornerShape(14.dp),
-            )
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        pressed = true
-                        tryAwaitRelease()
-                        pressed = false
-                    },
-                    onTap = { onClick() },
-                )
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = if (pressed) AlienPink else AlienPink.copy(0.65f), fontSize = 22.sp)
-    }
-}
-
-// ── Stat chip for the top bar ─────────────────────────────────────────────────
 
 @Composable
 private fun Stat(label: String, value: String) {
@@ -161,6 +92,32 @@ private fun Stat(label: String, value: String) {
             fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
         Text(value, color = AlienPink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
+}
+
+@Composable
+private fun OverlayButton(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(AlienPink.copy(0.18f), RoundedCornerShape(14.dp))
+            .pointerInput(Unit) { detectTapGestures(onTap = { onClick() }) }
+            .padding(horizontal = 44.dp, vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, color = AlienPink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun OverlayLink(text: String, onClick: () -> Unit) {
+    Text(
+        text,
+        color = Color.White.copy(0.38f),
+        fontSize = 13.sp,
+        modifier = Modifier
+            .padding(top = 16.dp)
+            .pointerInput(Unit) { detectTapGestures(onTap = { onClick() }) }
+            .padding(8.dp),
+    )
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -179,7 +136,14 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
         }
     }
 
-    BackHandler { onBack() }
+    // Back press: pause if mid-game, else navigate away
+    BackHandler {
+        when (state.phase) {
+            TetrisPhase.PLAYING, TetrisPhase.LOCKING, TetrisPhase.CLEARING -> viewModel.pauseGame()
+            TetrisPhase.PAUSED -> { /* dialog already visible, do nothing */ }
+            else -> onBack()
+        }
+    }
 
     DisposableEffect(Unit) {
         viewModel.startGame()
@@ -205,14 +169,20 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+                // Pause / back button
                 Text(
-                    "‹",
+                    "⏸",
                     color = AlienPink,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
                     modifier = Modifier
                         .pointerInput(Unit) {
-                            detectTapGestures(onTap = { onBack() })
+                            detectTapGestures(onTap = {
+                                when (state.phase) {
+                                    TetrisPhase.PLAYING, TetrisPhase.LOCKING -> viewModel.pauseGame()
+                                    TetrisPhase.PAUSED -> viewModel.resumeGame()
+                                    else -> onBack()
+                                }
+                            })
                         }
                         .padding(end = 8.dp),
                 )
@@ -241,18 +211,14 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                         val ox = (size.width - (maxC - minC + 1) * pcs) / 2f
                         val oy = (size.height - (maxR - minR + 1) * pcs) / 2f
                         cells.forEach { (r, c) ->
-                            drawCell(
-                                state.next.toColor(),
-                                ox + (c - minC) * pcs,
-                                oy + (r - minR) * pcs,
-                                pcs,
-                            )
+                            drawCell(state.next.toColor(),
+                                ox + (c - minC) * pcs, oy + (r - minR) * pcs, pcs)
                         }
                     }
                 }
             }
 
-            // ── Play field (maximised 10×20 grid + swipe) ─────────────────
+            // ── Play field ────────────────────────────────────────────────
             BoxWithConstraints(
                 Modifier
                     .fillMaxWidth()
@@ -274,17 +240,17 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                 Canvas(
                     Modifier
                         .fillMaxSize()
+                        // tap = rotate
                         .pointerInput(Unit) {
                             detectTapGestures(onTap = { viewModel.onRotate() })
                         }
+                        // drag = move / soft drop / hard drop
                         .pointerInput(Unit) {
                             var accX = 0f
                             var totalY = 0f
                             var totalX = 0f
                             detectDragGestures(
-                                onDragStart = {
-                                    accX = 0f; totalY = 0f; totalX = 0f
-                                },
+                                onDragStart = { accX = 0f; totalY = 0f; totalX = 0f },
                                 onDragEnd = {
                                     viewModel.setSoftDrop(false)
                                     if (totalY > cellSz * 5f && totalY > abs(totalX) * 1.6f) {
@@ -297,12 +263,8 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                                 accX += drag.x
                                 totalX += drag.x
                                 totalY += drag.y
-                                while (accX >= cellSz) {
-                                    viewModel.onSwipeRight(); accX -= cellSz
-                                }
-                                while (accX <= -cellSz) {
-                                    viewModel.onSwipeLeft(); accX += cellSz
-                                }
+                                while (accX >= cellSz) { viewModel.onSwipeRight(); accX -= cellSz }
+                                while (accX <= -cellSz) { viewModel.onSwipeLeft(); accX += cellSz }
                                 if (drag.y > 0f && abs(drag.y) > abs(drag.x)) {
                                     viewModel.setSoftDrop(true)
                                 }
@@ -319,7 +281,7 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                         )
                     }
 
-                    // Grid panel
+                    // Grid background
                     drawRoundRect(
                         Color.White.copy(alpha = 0.04f),
                         Offset(gridLeft - 3f, gridTop - 3f),
@@ -327,18 +289,14 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                         CornerRadius(8f, 8f),
                     )
                     for (c in 0..TetrisEngine.COLS) {
-                        drawLine(
-                            Color.White.copy(alpha = 0.06f),
+                        drawLine(Color.White.copy(alpha = 0.06f),
                             Offset(gridLeft + c * cellSz, gridTop),
-                            Offset(gridLeft + c * cellSz, gridTop + gridH),
-                        )
+                            Offset(gridLeft + c * cellSz, gridTop + gridH))
                     }
                     for (r in 0..TetrisEngine.ROWS) {
-                        drawLine(
-                            Color.White.copy(alpha = 0.06f),
+                        drawLine(Color.White.copy(alpha = 0.06f),
                             Offset(gridLeft, gridTop + r * cellSz),
-                            Offset(gridLeft + gridW, gridTop + r * cellSz),
-                        )
+                            Offset(gridLeft + gridW, gridTop + r * cellSz))
                     }
 
                     // Locked cells
@@ -359,7 +317,7 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                         }
                     }
 
-                    // Ghost + active
+                    // Ghost + active piece
                     val active = state.active
                     if (active != null && state.phase != TetrisPhase.CLEARING) {
                         val ghostR = engine.ghostRow(state.grid, active)
@@ -380,48 +338,36 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                         }
                         engine.cells(active).forEach { (r, c) ->
                             if (r in 0 until TetrisEngine.ROWS) {
-                                drawCell(active.type.toColor(), gridLeft + c * cellSz, gridTop + r * cellSz, cellSz)
+                                drawCell(active.type.toColor(),
+                                    gridLeft + c * cellSz, gridTop + r * cellSz, cellSz)
                             }
                         }
                     }
                 }
             }
+        }
 
-            // ── Control buttons ───────────────────────────────────────────
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(88.dp)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        // ── Pause overlay ─────────────────────────────────────────────────────
+        if (state.phase == TetrisPhase.PAUSED) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.80f)),
+                contentAlignment = Alignment.Center,
             ) {
-                HoldButton(
-                    "◀", Modifier.weight(1f).fillMaxSize().padding(end = 4.dp),
-                    onDown = { viewModel.setLeftDown(true) },
-                    onUp = { viewModel.setLeftDown(false) },
-                )
-                HoldButton(
-                    "▶", Modifier.weight(1f).fillMaxSize().padding(horizontal = 4.dp),
-                    onDown = { viewModel.setRightDown(true) },
-                    onUp = { viewModel.setRightDown(false) },
-                )
-                HoldButton(
-                    "▼", Modifier.weight(1f).fillMaxSize().padding(horizontal = 4.dp),
-                    onDown = { viewModel.setSoftDrop(true) },
-                    onUp = { viewModel.setSoftDrop(false) },
-                )
-                TapButton(
-                    "↺", Modifier.weight(1f).fillMaxSize().padding(horizontal = 4.dp),
-                    onClick = { viewModel.onRotate() },
-                )
-                TapButton(
-                    "⬇", Modifier.weight(1f).fillMaxSize().padding(start = 4.dp),
-                    onClick = { viewModel.onHardDrop() },
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("DESCENT PAUSED", color = AlienPink, fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Text("Score · ${state.score}", color = Color.White.copy(0.50f),
+                        fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                    Spacer(Modifier.height(28.dp))
+                    OverlayButton("▶  RESUME") { viewModel.resumeGame() }
+                    OverlayLink("Abandon Descent") { onBack() }
+                }
             }
         }
 
-        // ── Game-over overlay ─────────────────────────────────────────────
+        // ── Game-over overlay ─────────────────────────────────────────────────
         if (state.phase == TetrisPhase.GAME_OVER) {
             Box(
                 Modifier
@@ -444,30 +390,9 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                         Text("⬥  NEW RECORD  ⬥", color = Color(0xFFFFD66B), fontSize = 13.sp,
                             fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                     }
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 28.dp)
-                            .background(AlienPink.copy(0.18f), RoundedCornerShape(14.dp))
-                            .pointerInput(Unit) {
-                                detectTapGestures(onTap = { viewModel.startGame() })
-                            }
-                            .padding(horizontal = 44.dp, vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("▶  REDESCEND", color = AlienPink, fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold)
-                    }
-                    Text(
-                        "Abandon Descent",
-                        color = Color.White.copy(0.38f),
-                        fontSize = 13.sp,
-                        modifier = Modifier
-                            .padding(top = 16.dp)
-                            .pointerInput(Unit) {
-                                detectTapGestures(onTap = { onBack() })
-                            }
-                            .padding(8.dp),
-                    )
+                    Spacer(Modifier.height(28.dp))
+                    OverlayButton("▶  REDESCEND") { viewModel.startGame() }
+                    OverlayLink("Abandon Descent") { onBack() }
                 }
             }
         }

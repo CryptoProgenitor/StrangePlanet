@@ -103,4 +103,21 @@ class TetrisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onSwipeLeft()  { input = input.copy(moveLeft = true) }
     fun onSwipeRight() { input = input.copy(moveRight = true) }
+
+    // ── Pause / resume ─────────────────────────────────────────────────────
+
+    fun pauseGame() {
+        val s = _state.value
+        if (s.phase == TetrisPhase.PLAYING || s.phase == TetrisPhase.LOCKING) {
+            _state.value = s.copy(phase = TetrisPhase.PAUSED)
+        }
+    }
+
+    fun resumeGame() {
+        val s = _state.value
+        if (s.phase == TetrisPhase.PAUSED) {
+            input = TetrisInput()
+            _state.value = s.copy(phase = TetrisPhase.PLAYING)
+        }
+    }
 }
