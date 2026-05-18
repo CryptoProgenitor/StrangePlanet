@@ -65,14 +65,18 @@ fun CylinderCarousel(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
 
-    // Angular spacing between adjacent cards on the drum (degrees).
-    val step = 30f
-    // Cards beyond this angle from the front are fully invisible.
-    val cutoff = 110f
+    // Angular spacing so all cards fill the full 360° drum — a true closed
+    // loop with no empty wedge at the back.
+    val step = 360f / count
+    // Cards beyond this angle from the front are fully invisible. Keeps the
+    // current card plus two on each side on screen.
+    val cutoff = (step * 2.5f).coerceAtMost(160f)
     // Pixels of horizontal drag that equal one degree of rotation.
     val dragPerDeg = with(density) { 3.6.dp.toPx() }
-    val radiusPx = with(density) { (cardWidth * 1.18f).toPx() }
-    val cameraPx = with(density) { 16.dp.toPx() }
+    val radiusPx = with(density) { (cardWidth * 1.3f).toPx() }
+    // Must be large relative to the card or the perspective projection
+    // degenerates and the card vanishes.
+    val cameraPx = with(density) { cardHeight.toPx() * 2.5f }
 
     // Drum rotation, in degrees. The card nearest a multiple of `step` is
     // the focused one (its angle ≈ 0).
@@ -89,12 +93,6 @@ fun CylinderCarousel(
 
     Box(
         modifier = modifier
-            .graphicsLayer {
-                // The "viewed slightly from above" tilt — a restrained
-                // ellipse hint, not a CSS-3D gimmick.
-                rotationX = -7f
-                cameraDistance = cameraPx
-            }
             .pointerInput(count) {
                 val tracker = VelocityTracker()
                 detectHorizontalDragGestures(
@@ -136,7 +134,7 @@ fun CylinderCarousel(
             val rad = theta * (PI / 180f).toFloat()
             val proximity = (1f - absT / step).coerceIn(0f, 1f) // 1 at front
             val fade = (1f - absT / cutoff).coerceIn(0f, 1f)
-            val blurDp = (absT / 55f).coerceIn(0f, 1f) * 11f
+            val blurDp = (absT / cutoff).coerceIn(0f, 1f) * 10f
             val scrimA = (absT / cutoff).coerceIn(0f, 1f) * 0.55f
             val pop = 1f + 0.07f * proximity
 
@@ -145,6 +143,9 @@ fun CylinderCarousel(
                     .size(cardWidth, cardHeight)
                     .zIndex(cos(rad))
                     .graphicsLayer {
+                        // Slight "viewed from above" tilt, applied per small
+                        // card (safe) rather than to the giant container.
+                        rotationX = -6f
                         rotationY = theta
                         translationX = sin(rad) * radiusPx
                         cameraDistance = cameraPx
