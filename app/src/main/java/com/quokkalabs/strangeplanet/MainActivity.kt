@@ -19,11 +19,11 @@ import com.quokkalabs.strangeplanet.ui.screen.PacScreen
 import com.quokkalabs.strangeplanet.ui.screen.PongScreen
 import com.quokkalabs.strangeplanet.ui.screen.SettingsScreen
 import com.quokkalabs.strangeplanet.ui.screen.SpaceInvadersScreen
-import com.quokkalabs.strangeplanet.ui.screen.BlockBlastScreen
+import com.quokkalabs.strangeplanet.ui.screen.TetrisScreen
 import com.quokkalabs.strangeplanet.ui.screen.StrangeMatchScreen
 import com.quokkalabs.strangeplanet.ui.theme.StrangePlanetTheme
 import com.quokkalabs.strangeplanet.ui.viewmodel.AsteroidViewModel
-import com.quokkalabs.strangeplanet.ui.viewmodel.BlockBlastViewModel
+import com.quokkalabs.strangeplanet.ui.viewmodel.TetrisViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.MergeViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.PacViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.PongViewModel
@@ -32,7 +32,7 @@ import com.quokkalabs.strangeplanet.ui.viewmodel.StrangePlanetViewModel
 import com.quokkalabs.strangeplanet.ui.viewmodel.StrangeMatchViewModel
 
 private enum class Screen {
-    INTERACTIVE, SETTINGS, PONG, SPACE_INVADERS, PACMAN, ASTEROIDS, STRANGE_MATCH, MERGE, BLOCK_BLAST
+    INTERACTIVE, SETTINGS, PONG, SPACE_INVADERS, PACMAN, ASTEROIDS, STRANGE_MATCH, MERGE, TETRIS
 }
 
 class MainActivity : ComponentActivity() {
@@ -99,10 +99,10 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = Screen.INTERACTIVE },
                             )
                         }
-                        Screen.BLOCK_BLAST -> {
-                            val bbViewModel: BlockBlastViewModel = viewModel()
-                            BlockBlastScreen(
-                                viewModel = bbViewModel,
+                        Screen.TETRIS -> {
+                            val tetrisViewModel: TetrisViewModel = viewModel()
+                            TetrisScreen(
+                                viewModel = tetrisViewModel,
                                 onBack = { screen = Screen.INTERACTIVE },
                             )
                         }
@@ -134,9 +134,9 @@ class MainActivity : ComponentActivity() {
                                 showBulletin = false
                                 screen = Screen.MERGE
                             },
-                            onNavigateToBlockBlast = {
+                            onNavigateToTetris = {
                                 showBulletin = false
-                                screen = Screen.BLOCK_BLAST
+                                screen = Screen.TETRIS
                             },
                             onNavigateToSettings = {
                                 showBulletin = false

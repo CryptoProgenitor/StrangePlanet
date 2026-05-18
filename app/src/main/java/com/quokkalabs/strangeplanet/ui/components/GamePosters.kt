@@ -554,19 +554,19 @@ fun CreaturePoster(modifier: Modifier = Modifier) {
 
 private fun DrawScope.dpf(value: Float = 1f): Float = value * density
 
-// ── Territorial Configuration (Block Blast) ─────────────────────────────────
+// ── Fragment Descent (Tetris) ────────────────────────────────────────────────
 
 @Composable
-fun BlockBlastPoster(modifier: Modifier = Modifier) {
-    val t = rememberInfiniteTransition(label = "bb")
-    val bob by t.animateFloat(
-        -0.4f, 0.4f,
-        infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Reverse),
-        label = "bob",
+fun TetrisPoster(modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "tet")
+    val drop by t.animateFloat(
+        0f, 1f,
+        infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Restart),
+        label = "drop",
     )
     val flash by t.animateFloat(
-        0.25f, 1f,
-        infiniteRepeatable(tween(700, easing = LinearEasing), RepeatMode.Reverse),
+        0.3f, 1f,
+        infiniteRepeatable(tween(600, easing = LinearEasing), RepeatMode.Reverse),
         label = "flash",
     )
     val stars = remember { starfield(16, 55) }
@@ -574,61 +574,72 @@ fun BlockBlastPoster(modifier: Modifier = Modifier) {
         space(stars)
         val w = size.width
         val h = size.height
-        val cols = 6
-        val gridW = w * 0.74f
+        val cols = 7
+        val rows = 12
+        val gridW = w * 0.70f
         val cellSz = gridW / cols
         val gridL = (w - gridW) / 2f
-        val gridT = h * 0.32f
+        val gridT = h * 0.12f
+        val gridH = cellSz * rows
 
         // Grid panel
         drawRoundRect(
             Color.White.copy(alpha = 0.05f),
-            Offset(gridL - 3f, gridT - 3f), Size(gridW + 6f, gridW + 6f),
+            Offset(gridL - 3f, gridT - 3f), Size(gridW + 6f, gridH + 6f),
             CornerRadius(10f, 10f),
         )
         // Grid lines
-        for (i in 0..cols) {
-            val x = gridL + i * cellSz; val y = gridT + i * cellSz
-            drawLine(Color.White.copy(alpha = 0.09f), Offset(x, gridT), Offset(x, gridT + gridW))
-            drawLine(Color.White.copy(alpha = 0.09f), Offset(gridL, y), Offset(gridL + gridW, y))
+        for (i in 0..cols) drawLine(
+            Color.White.copy(alpha = 0.08f),
+            Offset(gridL + i * cellSz, gridT), Offset(gridL + i * cellSz, gridT + gridH),
+        )
+        for (i in 0..rows) drawLine(
+            Color.White.copy(alpha = 0.08f),
+            Offset(gridL, gridT + i * cellSz), Offset(gridL + gridW, gridT + i * cellSz),
+        )
+
+        fun drawBlock(r: Int, c: Int, color: Color, alpha: Float = 1f) {
+            val bx = gridL + c * cellSz
+            val by = gridT + r * cellSz
+            val inset = cellSz * 0.06f
+            val inner = cellSz - inset * 2f
+            drawRoundRect(
+                Brush.radialGradient(
+                    listOf(Color.White.copy(0.28f * alpha), color.copy(alpha), color.copy(0.70f * alpha)),
+                    Offset(bx + inset + inner * 0.28f, by + inset + inner * 0.28f), inner,
+                ),
+                Offset(bx + inset, by + inset), Size(inner, inner),
+                CornerRadius(cellSz * 0.22f, cellSz * 0.22f),
+            )
         }
 
-        // Placed blocks (partial board)
+        // Settled blocks
         data class Cell(val r: Int, val c: Int, val color: Color)
-        val placed = listOf(
-            Cell(0, 0, Color(0xFFFF6B6B)), Cell(0, 1, Color(0xFFFF6B6B)),
-            Cell(1, 0, Color(0xFF00E5FF)), Cell(1, 1, Color(0xFF00E5FF)), Cell(1, 2, Color(0xFF00E5FF)),
-            Cell(2, 0, Color(0xFF9B7FB8)), Cell(2, 2, Color(0xFFFFD66B)), Cell(2, 3, Color(0xFFFFD66B)),
-            Cell(3, 3, AlienPink),         Cell(3, 4, AlienPink),
-            Cell(4, 1, Color(0xFF9FB6E0)), Cell(4, 2, Color(0xFF9FB6E0)), Cell(4, 3, Color(0xFF9FB6E0)),
-            // Row 5: complete — shows flash
-            Cell(5, 0, AlienPink), Cell(5, 1, AlienPink), Cell(5, 2, AlienPink),
-            Cell(5, 3, AlienPink), Cell(5, 4, AlienPink), Cell(5, 5, AlienPink),
+        val settled = listOf(
+            Cell(9, 0, Color(0xFF00E5FF)), Cell(9, 1, Color(0xFF00E5FF)), Cell(9, 2, Color(0xFF00E5FF)), Cell(9, 3, Color(0xFF00E5FF)),
+            Cell(10, 0, Color(0xFFFF6B6B)), Cell(10, 2, Color(0xFFFF6B6B)), Cell(10, 3, Color(0xFF6BCB77)),
+            Cell(10, 4, Color(0xFF6BCB77)), Cell(10, 5, Color(0xFFFFD66B)), Cell(10, 6, Color(0xFFFFD66B)),
+            // Row 11: complete row — flashes
+            Cell(11, 0, AlienPink), Cell(11, 1, AlienPink), Cell(11, 2, AlienPink), Cell(11, 3, AlienPink),
+            Cell(11, 4, AlienPink), Cell(11, 5, AlienPink), Cell(11, 6, AlienPink),
         )
-        placed.forEach { (r, c, color) ->
-            val bx = gridL + c * cellSz; val by = gridT + r * cellSz
-            val inset = cellSz * 0.06f; val inner = cellSz - inset * 2f
-            val corner = CornerRadius(cellSz * 0.22f, cellSz * 0.22f)
-            if (r == 5) {
-                drawRoundRect(AlienPink.copy(alpha = flash * 0.90f), Offset(bx + inset, by + inset), Size(inner, inner), corner)
-                drawCircle(AlienPink.copy(alpha = flash * 0.30f), cellSz * 0.6f, Offset(bx + cellSz / 2f, by + cellSz / 2f))
+        settled.forEach { (r, c, color) ->
+            if (r == 11) {
+                drawBlock(r, c, AlienPink, flash * 0.95f)
+                drawCircle(AlienPink.copy(alpha = flash * 0.20f), cellSz * 0.55f,
+                    Offset(gridL + c * cellSz + cellSz / 2f, gridT + r * cellSz + cellSz / 2f))
             } else {
-                drawRoundRect(
-                    Brush.radialGradient(
-                        listOf(Color.White.copy(0.28f), color, color.copy(0.70f)),
-                        Offset(bx + inset + inner * 0.28f, by + inset + inner * 0.28f), inner,
-                    ),
-                    Offset(bx + inset, by + inset), Size(inner, inner), corner,
-                )
+                drawBlock(r, c, color)
             }
         }
 
-        // Floating L-piece above the grid, bobbing gently
-        val pTop = gridT - cellSz * 2.8f + bob * cellSz * 0.28f
-        val pLeft = gridL + 3.5f * cellSz
-        listOf(0 to 0, 1 to 0, 2 to 0, 2 to 1).forEach { (dr, dc) ->
-            val bx = pLeft + dc * cellSz; val by = pTop + dr * cellSz
-            val inset = cellSz * 0.06f; val inner = cellSz - inset * 2f
+        // Falling T-piece (AlienPink) — animates down rows 4..8
+        val tRow = 4f + drop * 4f
+        listOf(0 to 0, 0 to 1, 0 to 2, 1 to 1).forEach { (dr, dc) ->
+            val bx = gridL + (2 + dc) * cellSz
+            val by = gridT + (tRow + dr) * cellSz
+            val inset = cellSz * 0.06f
+            val inner = cellSz - inset * 2f
             drawRoundRect(
                 Brush.radialGradient(
                     listOf(Color.White.copy(0.28f), AlienPink, AlienPink.copy(0.70f)),
@@ -638,10 +649,18 @@ fun BlockBlastPoster(modifier: Modifier = Modifier) {
                 CornerRadius(cellSz * 0.22f, cellSz * 0.22f),
             )
         }
-        drawCircle(
-            AlienPink.copy(alpha = 0.18f + bob * 0.04f),
-            cellSz * 0.9f,
-            Offset(pLeft + cellSz * 0.5f, pTop + cellSz * 1.5f),
-        )
+        // Ghost outline at landing row
+        listOf(0 to 0, 0 to 1, 0 to 2, 1 to 1).forEach { (dr, dc) ->
+            val bx = gridL + (2 + dc) * cellSz
+            val by = gridT + (8 + dr) * cellSz
+            val inset = cellSz * 0.06f
+            val inner = cellSz - inset * 2f
+            drawRoundRect(
+                AlienPink.copy(alpha = 0.28f),
+                Offset(bx + inset, by + inset), Size(inner, inner),
+                CornerRadius(cellSz * 0.22f, cellSz * 0.22f),
+                style = Stroke(dpf(1.5f)),
+            )
+        }
     }
 }
