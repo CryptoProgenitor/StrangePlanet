@@ -147,9 +147,6 @@ fun CylinderCarousel(
                     .graphicsLayer {
                         rotationY = theta
                         translationX = sin(rad) * radiusPx
-                        // Push the sides back along Z so the strip is a true
-                        // cylinder, not a flat fan of rotated cards.
-                        translationZ = (cos(rad) - 1f) * radiusPx
                         cameraDistance = cameraPx
                         scaleX = pop
                         scaleY = pop
