@@ -171,17 +171,21 @@ fun InvadersPoster(modifier: Modifier = Modifier) {
             }
         }
 
-        // Player cannon
+        // Player cannon — inverted-T silhouette: wide flat base + short wide turret
         val pcx = w * 0.5f + sway * w * 0.04f
         val pcy = h * 0.88f
         val pw = w * 0.16f
+        // Base platform
         drawRoundRect(
-            AlienPink, Offset(pcx - pw / 2f, pcy - h * 0.025f), Size(pw, h * 0.05f),
-            CornerRadius(pw * 0.2f, pw * 0.2f),
+            AlienPink, Offset(pcx - pw / 2f, pcy - h * 0.020f), Size(pw, h * 0.040f),
+            CornerRadius(pw * 0.20f, pw * 0.20f),
         )
+        // Short, wide turret (3:1 aspect ratio — clearly a gun nozzle, not a barrel)
+        val tw = w * 0.072f
+        val th = h * 0.024f
         drawRoundRect(
-            AlienPink, Offset(pcx - w * 0.012f, pcy - h * 0.06f), Size(w * 0.024f, h * 0.04f),
-            CornerRadius(4f, 4f),
+            AlienPink, Offset(pcx - tw / 2f, pcy - h * 0.020f - th), Size(tw, th),
+            CornerRadius(tw * 0.25f, tw * 0.25f),
         )
 
         // Projectile
