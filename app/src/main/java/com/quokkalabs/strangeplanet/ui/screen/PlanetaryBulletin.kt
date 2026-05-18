@@ -170,6 +170,7 @@ fun PlanetaryBulletin(
             ) {
                 CylinderCarousel(
                     count = destinations.size,
+                    modifier = Modifier.fillMaxSize(),
                     onFocusedChange = { focused = it },
                     onLaunch = { destinations[it].onClick() },
                 ) { idx -> destinations[idx].poster() }
