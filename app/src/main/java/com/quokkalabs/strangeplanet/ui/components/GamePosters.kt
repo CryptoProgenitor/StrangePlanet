@@ -553,3 +553,95 @@ fun CreaturePoster(modifier: Modifier = Modifier) {
 }
 
 private fun DrawScope.dpf(value: Float = 1f): Float = value * density
+
+// ── Territorial Configuration (Block Blast) ─────────────────────────────────
+
+@Composable
+fun BlockBlastPoster(modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "bb")
+    val bob by t.animateFloat(
+        -0.4f, 0.4f,
+        infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Reverse),
+        label = "bob",
+    )
+    val flash by t.animateFloat(
+        0.25f, 1f,
+        infiniteRepeatable(tween(700, easing = LinearEasing), RepeatMode.Reverse),
+        label = "flash",
+    )
+    val stars = remember { starfield(16, 55) }
+    Canvas(modifier.fillMaxSize()) {
+        space(stars)
+        val w = size.width
+        val h = size.height
+        val cols = 6
+        val gridW = w * 0.74f
+        val cellSz = gridW / cols
+        val gridL = (w - gridW) / 2f
+        val gridT = h * 0.32f
+
+        // Grid panel
+        drawRoundRect(
+            Color.White.copy(alpha = 0.05f),
+            Offset(gridL - 3f, gridT - 3f), Size(gridW + 6f, gridW + 6f),
+            CornerRadius(10f, 10f),
+        )
+        // Grid lines
+        for (i in 0..cols) {
+            val x = gridL + i * cellSz; val y = gridT + i * cellSz
+            drawLine(Color.White.copy(alpha = 0.09f), Offset(x, gridT), Offset(x, gridT + gridW))
+            drawLine(Color.White.copy(alpha = 0.09f), Offset(gridL, y), Offset(gridL + gridW, y))
+        }
+
+        // Placed blocks (partial board)
+        data class Cell(val r: Int, val c: Int, val color: Color)
+        val placed = listOf(
+            Cell(0, 0, Color(0xFFFF6B6B)), Cell(0, 1, Color(0xFFFF6B6B)),
+            Cell(1, 0, Color(0xFF00E5FF)), Cell(1, 1, Color(0xFF00E5FF)), Cell(1, 2, Color(0xFF00E5FF)),
+            Cell(2, 0, Color(0xFF9B7FB8)), Cell(2, 2, Color(0xFFFFD66B)), Cell(2, 3, Color(0xFFFFD66B)),
+            Cell(3, 3, AlienPink),         Cell(3, 4, AlienPink),
+            Cell(4, 1, Color(0xFF9FB6E0)), Cell(4, 2, Color(0xFF9FB6E0)), Cell(4, 3, Color(0xFF9FB6E0)),
+            // Row 5: complete — shows flash
+            Cell(5, 0, AlienPink), Cell(5, 1, AlienPink), Cell(5, 2, AlienPink),
+            Cell(5, 3, AlienPink), Cell(5, 4, AlienPink), Cell(5, 5, AlienPink),
+        )
+        placed.forEach { (r, c, color) ->
+            val bx = gridL + c * cellSz; val by = gridT + r * cellSz
+            val inset = cellSz * 0.06f; val inner = cellSz - inset * 2f
+            val corner = CornerRadius(cellSz * 0.22f, cellSz * 0.22f)
+            if (r == 5) {
+                drawRoundRect(AlienPink.copy(alpha = flash * 0.90f), Offset(bx + inset, by + inset), Size(inner, inner), corner)
+                drawCircle(AlienPink.copy(alpha = flash * 0.30f), cellSz * 0.6f, Offset(bx + cellSz / 2f, by + cellSz / 2f))
+            } else {
+                drawRoundRect(
+                    Brush.radialGradient(
+                        listOf(Color.White.copy(0.28f), color, color.copy(0.70f)),
+                        Offset(bx + inset + inner * 0.28f, by + inset + inner * 0.28f), inner,
+                    ),
+                    Offset(bx + inset, by + inset), Size(inner, inner), corner,
+                )
+            }
+        }
+
+        // Floating L-piece above the grid, bobbing gently
+        val pTop = gridT - cellSz * 2.8f + bob * cellSz * 0.28f
+        val pLeft = gridL + 3.5f * cellSz
+        listOf(0 to 0, 1 to 0, 2 to 0, 2 to 1).forEach { (dr, dc) ->
+            val bx = pLeft + dc * cellSz; val by = pTop + dr * cellSz
+            val inset = cellSz * 0.06f; val inner = cellSz - inset * 2f
+            drawRoundRect(
+                Brush.radialGradient(
+                    listOf(Color.White.copy(0.28f), AlienPink, AlienPink.copy(0.70f)),
+                    Offset(bx + inset + inner * 0.28f, by + inset + inner * 0.28f), inner,
+                ),
+                Offset(bx + inset, by + inset), Size(inner, inner),
+                CornerRadius(cellSz * 0.22f, cellSz * 0.22f),
+            )
+        }
+        drawCircle(
+            AlienPink.copy(alpha = 0.18f + bob * 0.04f),
+            cellSz * 0.9f,
+            Offset(pLeft + cellSz * 0.5f, pTop + cellSz * 1.5f),
+        )
+    }
+}

@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quokkalabs.strangeplanet.ui.components.AmbientPoster
 import com.quokkalabs.strangeplanet.ui.components.AsteroidPoster
+import com.quokkalabs.strangeplanet.ui.components.BlockBlastPoster
 import com.quokkalabs.strangeplanet.ui.components.CreaturePoster
 import com.quokkalabs.strangeplanet.ui.components.CylinderCarousel
 import com.quokkalabs.strangeplanet.ui.components.InvadersPoster
@@ -66,6 +67,7 @@ fun PlanetaryBulletin(
     onNavigateToAsteroids: () -> Unit,
     onNavigateToStrangeMatch: () -> Unit,
     onNavigateToMerge: () -> Unit,
+    onNavigateToBlockBlast: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -85,6 +87,9 @@ fun PlanetaryBulletin(
     val mergeHighScore = remember {
         context.getSharedPreferences("merge_prefs", 0).getInt("high_score", 0)
     }
+    val blockBlastHighScore = remember {
+        context.getSharedPreferences("block_blast_prefs", 0).getInt("high_score", 0)
+    }
     val versionName = packageInfo.versionName ?: "?"
     val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         packageInfo.longVersionCode
@@ -94,7 +99,7 @@ fun PlanetaryBulletin(
     }
 
     val destinations = remember(
-        pacHighScore, asteroidHighScore, strangeMatchHighScore, mergeHighScore,
+        pacHighScore, asteroidHighScore, strangeMatchHighScore, mergeHighScore, blockBlastHighScore,
     ) {
         listOf(
             Destination(
@@ -139,6 +144,13 @@ fun PlanetaryBulletin(
                 "🪐",
                 onNavigateToMerge,
             ) { MergePoster() },
+            Destination(
+                "Territorial Configuration",
+                "Place crystalline fragments to occupy\nsectors; clear full rows and columns.",
+                if (blockBlastHighScore > 0) "Record · $blockBlastHighScore mass arranged" else null,
+                "🔷",
+                onNavigateToBlockBlast,
+            ) { BlockBlastPoster() },
             Destination(
                 "Ambient Decoration",
                 "Adorn your device surface with a slowly\nrotating ringed world and drifting stars.",
