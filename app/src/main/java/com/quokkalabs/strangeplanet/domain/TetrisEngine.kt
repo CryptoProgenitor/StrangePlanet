@@ -169,6 +169,14 @@ class TetrisEngine {
             }
         }
 
+        // ── One-shot swipe moves ───────────────────────────────────────────
+        if (input.moveLeft) {
+            tryMove(s.grid, s.active!!, 0, -1)?.let { s = s.copy(active = it, lockFrames = 0) }
+        }
+        if (input.moveRight) {
+            tryMove(s.grid, s.active!!, 0, 1)?.let { s = s.copy(active = it, lockFrames = 0) }
+        }
+
         // ── Hard drop (one-shot) ───────────────────────────────────────────
         if (input.hardDrop) {
             val dropRow = ghostRow(s.grid, s.active!!)

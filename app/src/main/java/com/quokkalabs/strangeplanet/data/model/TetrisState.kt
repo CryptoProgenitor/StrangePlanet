@@ -17,6 +17,8 @@ data class TetrisInput(
     val softDrop: Boolean = false,
     val rotate: Boolean = false,    // consumed each frame
     val hardDrop: Boolean = false,  // consumed each frame
+    val moveLeft: Boolean = false,  // one-shot swipe, consumed each frame
+    val moveRight: Boolean = false, // one-shot swipe, consumed each frame
 )
 
 data class TetrisState(

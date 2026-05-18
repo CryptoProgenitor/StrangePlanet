@@ -50,8 +50,12 @@ class TetrisViewModel(application: Application) : AndroidViewModel(application) 
                         TetrisPhase.PLAYING, TetrisPhase.LOCKING -> {
                             val currentInput = input
                             // Consume one-shot inputs
-                            if (currentInput.rotate || currentInput.hardDrop) {
-                                input = currentInput.copy(rotate = false, hardDrop = false)
+                            if (currentInput.rotate || currentInput.hardDrop ||
+                                currentInput.moveLeft || currentInput.moveRight) {
+                                input = currentInput.copy(
+                                    rotate = false, hardDrop = false,
+                                    moveLeft = false, moveRight = false,
+                                )
                             }
                             val next = engine.update(s, currentInput)
                             if (next.score > highScore) {
@@ -94,4 +98,9 @@ class TetrisViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onRotate()   { input = input.copy(rotate = true) }
     fun onHardDrop() { input = input.copy(hardDrop = true) }
+
+    // ── Swipe inputs (one-shot single-cell moves) ──────────────────────────
+
+    fun onSwipeLeft()  { input = input.copy(moveLeft = true) }
+    fun onSwipeRight() { input = input.copy(moveRight = true) }
 }
