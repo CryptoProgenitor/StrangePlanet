@@ -1,5 +1,9 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -97,12 +101,31 @@ import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.theme.SoftPink
 import com.quokkalabs.strangeplanet.ui.viewmodel.PongViewModel
 
+/** The state minus everything that moves every tick, for the HUD and overlays. */
+private fun PongGameState.withoutMotion() = copy(
+    ballX = 0f,
+    ballY = 0f,
+    ballVx = 0f,
+    ballVy = 0f,
+    playerPaddleX = 0f,
+    aiPaddleX = 0f,
+    trail = emptyList(),
+    playerHitPulse = 0f,
+    aiHitPulse = 0f,
+    pointPauseTimer = 0,
+    wallBounced = false,
+)
+
 @Composable
 fun PongScreen(
     viewModel: PongViewModel,
     onBack: () -> Unit,
 ) {
-    val state by viewModel.gameState.collectAsState()
+    // Ball, paddles and trail change every tick but are only read while drawing (and
+    // in the creatures' offset/graphicsLayer lambdas). The rest of the screen reads a
+    // copy with the motion stripped, so it recomposes on score/phase changes only.
+    val liveState = viewModel.gameState.collectAsState()
+    val state by remember { derivedStateOf { liveState.value.withoutMotion() } }
     val btState by viewModel.btState.collectAsState()
     val onlineState by viewModel.onlineState.collectAsState()
     val settings by viewModel.pongSettings.collectAsState()
@@ -232,24 +255,24 @@ fun PongScreen(
                 }
 
                 // Game canvas (ball, paddles, trail — drawn above score pill)
-                GameCanvas(state = state)
+                GameCanvas(frame = liveState)
 
                 // Top creature (AI / player 2)
                 PongCreature(
                     drawableRes = topCreature,
-                    paddleX = state.aiPaddleX,
+                    paddleX = { liveState.value.aiPaddleX },
                     paddleY = state.aiPaddleY,
                     isFlipped = true,
-                    hitPulse = state.aiHitPulse,
+                    hitPulse = { liveState.value.aiHitPulse },
                 )
 
                 // Player creature (bottom)
                 PongCreature(
                     drawableRes = playerCreature,
-                    paddleX = state.playerPaddleX,
+                    paddleX = { liveState.value.playerPaddleX },
                     paddleY = state.playerPaddleY,
                     isFlipped = false,
-                    hitPulse = state.playerHitPulse,
+                    hitPulse = { liveState.value.playerHitPulse },
                 )
 
                 // Active saying (gated by settings)
@@ -481,8 +504,9 @@ fun PongScreen(
 // ─── Game Canvas ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun GameCanvas(state: PongGameState) {
+private fun GameCanvas(frame: State<PongGameState>) {
     Canvas(modifier = Modifier.fillMaxSize()) {
+        val state = frame.value
         // Center dashed line
         val dashLen = 20f
         val gapLen = 15f
@@ -578,15 +602,14 @@ private fun GameCanvas(state: PongGameState) {
 @Composable
 private fun PongCreature(
     drawableRes: Int,
-    paddleX: Float,
+    paddleX: () -> Float,
     paddleY: Float,
     isFlipped: Boolean,
-    hitPulse: Float,
+    hitPulse: () -> Float,
 ) {
     val density = LocalDensity.current
     val creatureSize = 70.dp
     val creatureSizePx = with(density) { creatureSize.toPx() }
-    val scale = 1f + hitPulse * 0.12f
 
     // Sprite edge sits flush against the paddle
     val yOffset = if (isFlipped) {
@@ -599,12 +622,17 @@ private fun PongCreature(
         painter = painterResource(id = drawableRes),
         contentDescription = "Sphere Deflection Being",
         modifier = Modifier
-            .offset(
-                x = with(density) { (paddleX - creatureSizePx / 2f).toDp() },
-                y = with(density) { (yOffset - creatureSizePx / 2f).toDp() },
-            )
+            // Position and hit pulse are read in the layout/draw lambdas, so the paddle
+            // moving doesn't recompose or re-measure the sprite every tick.
+            .offset {
+                IntOffset(
+                    (paddleX() - creatureSizePx / 2f).roundToInt(),
+                    (yOffset - creatureSizePx / 2f).roundToInt(),
+                )
+            }
             .size(creatureSize)
             .graphicsLayer {
+                val scale = 1f + hitPulse() * 0.12f
                 scaleX = scale
                 scaleY = if (isFlipped) -scale else scale
             },
