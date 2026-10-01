@@ -40,7 +40,10 @@ if ($devices.Count -eq 0) {
 if (-not $NoBuild) {
     Write-Host "== Building $variant APK"
     $task = if ($Profile) { 'assembleProfile' } else { 'assembleDebug' }
-    & (Join-Path $root 'gradlew.bat') -p $root $task --console=plain -q
+    # Profile builds are phone-only (arm64); an emulator needs the x86 copies too.
+    $extra = @()
+    if ($Profile -and ($devices | Where-Object { $_.Serial -like 'emulator-*' })) { $extra += '-PallAbis' }
+    & (Join-Path $root 'gradlew.bat') -p $root $task --console=plain -q @extra
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'FAIL: Gradle build failed (see errors above).'
         exit 1

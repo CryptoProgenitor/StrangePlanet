@@ -8,4 +8,6 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="ic_launcher_background">#FF2E2A4A</color>
+    <!-- DeepNavy: what the launcher screen looks like, shown before the first frame. -->
+    <color name="launch_background">#FF2E2A4A</color>
 </resources>

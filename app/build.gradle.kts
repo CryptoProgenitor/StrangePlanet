@@ -4,6 +4,13 @@ plugins {
     alias(libs.plugins.google.services)
 }
 
+// Shareable builds carry only the 64-bit ARM copy of the native code (all current
+// phones). The online-Pong WebRTC library otherwise ships for 4 CPU types — ~43 MB of
+// a ~55 MB APK. Pass -PallAbis to keep the x86 copies for emulator testing.
+fun com.android.build.api.dsl.ApplicationBuildType.phoneAbiOnly() {
+    if (!project.hasProperty("allAbis")) ndk { abiFilters += "arm64-v8a" }
+}
+
 android {
     namespace = "com.quokkalabs.strangeplanet"
     compileSdk {
@@ -29,6 +36,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            phoneAbiOnly()
         }
         // Release-speed build signed with the local debug key, so it installs over the
         // debug app (keeping high scores). Debug builds are debuggable, which makes
@@ -37,6 +45,7 @@ android {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
+            phoneAbiOnly()
         }
     }
     compileOptions {
