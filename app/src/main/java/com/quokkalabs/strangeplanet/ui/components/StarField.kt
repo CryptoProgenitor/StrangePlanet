@@ -1,5 +1,6 @@
 package com.quokkalabs.strangeplanet.ui.components
 
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -79,7 +80,8 @@ fun StarField() {
         label = "twinkle",
     )
 
-    Canvas(modifier = Modifier.fillMaxSize()) {
+    // Own layer: the twinkle redraws only the stars, not whatever screen sits on top.
+    Canvas(modifier = Modifier.fillMaxSize().graphicsLayer()) {
         val t = twinkle.value
         val inset = 30.dp.toPx()
         val auraBase = 60.dp.toPx()

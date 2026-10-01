@@ -1,5 +1,7 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import com.quokkalabs.strangeplanet.ui.components.rememberIsStarted
+import androidx.compose.ui.graphics.graphicsLayer
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -92,7 +94,6 @@ import kotlin.math.ceil
 import kotlin.math.sin
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.components.ExitChoiceDialog
-import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
 import com.quokkalabs.strangeplanet.ui.components.ResumePrompt
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
@@ -144,7 +145,8 @@ fun MergeScreen(
     }
 
     DisposableEdgeToEdge(view)
-    PauseOnBackground { /* physics pauses naturally when phase != PLAYING */ }
+    // Freeze physics while the app is in the background (it used to keep simulating).
+    val onScreen by rememberIsStarted()
 
     var showExit by remember { mutableStateOf(false) }
     var showResume by remember { mutableStateOf(viewModel.hasSavedSession()) }
@@ -171,7 +173,7 @@ fun MergeScreen(
 
     val blockInput by rememberUpdatedState(
         showExit || showResume || showSolarSystem || showUndoConfirm || showSweepConfirm ||
-            showForfeitConfirm || (btLobbyActive && !matchActive) || matchResult != null,
+            showForfeitConfirm || (btLobbyActive && !matchActive) || matchResult != null || !onScreen,
     )
 
     LaunchedEffect(blockInput) { viewModel.setPaused(blockInput) }
@@ -212,7 +214,9 @@ fun MergeScreen(
                         }
                     },
             ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
+                // Own layer: a tick re-records only the board, and the twinkling stars behind
+                // don't force the board to be re-recorded at the display rate.
+                Canvas(modifier = Modifier.fillMaxSize().graphicsLayer()) {
                     // Read here, in the draw phase: a physics tick only redraws the board.
                     val state = liveState.value
                     drawVessel(state.vesselLeft, state.vesselRight, state.vesselTop, state.vesselBottom)

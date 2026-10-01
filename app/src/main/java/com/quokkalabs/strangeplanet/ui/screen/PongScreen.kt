@@ -1,5 +1,8 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import com.quokkalabs.strangeplanet.ui.components.rememberScaledImage
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.unit.IntOffset
@@ -100,6 +103,18 @@ import com.quokkalabs.strangeplanet.ui.theme.CardPink
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.theme.SoftPink
 import com.quokkalabs.strangeplanet.ui.viewmodel.PongViewModel
+
+private const val BALL_UNIT = 100f
+private val BallGlowBrush = Brush.radialGradient(
+    colors = listOf(SoftPink.copy(alpha = 0.35f), SoftPink.copy(alpha = 0.08f), Color.Transparent),
+    center = Offset.Zero,
+    radius = BALL_UNIT * 3.5f,
+)
+private val BallBodyBrush = Brush.radialGradient(
+    colors = listOf(AlienPink, SoftPink),
+    center = Offset(-BALL_UNIT * 0.25f, -BALL_UNIT * 0.25f),
+    radius = BALL_UNIT * 1.5f,
+)
 
 /** The state minus everything that moves every tick, for the HUD and overlays. */
 private fun PongGameState.withoutMotion() = copy(
@@ -231,11 +246,10 @@ fun PongScreen(
                     horizontalArrangement = Arrangement.Center,
                 ) {
                     Image(
-                        painter = painterResource(id = topCreature),
+                        bitmap = rememberScaledImage(topCreature, with(density) { 30.dp.roundToPx() }),
                         contentDescription = null,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .graphicsLayer { alpha = 0.75f },
+                        alpha = 0.75f,
+                        modifier = Modifier.size(30.dp),
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
@@ -246,11 +260,10 @@ fun PongScreen(
                     )
                     Spacer(Modifier.width(10.dp))
                     Image(
-                        painter = painterResource(id = playerCreature),
+                        bitmap = rememberScaledImage(playerCreature, with(density) { 30.dp.roundToPx() }),
                         contentDescription = null,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .graphicsLayer { alpha = 0.75f },
+                        alpha = 0.75f,
+                        modifier = Modifier.size(30.dp),
                     )
                 }
 
@@ -505,7 +518,9 @@ fun PongScreen(
 
 @Composable
 private fun GameCanvas(frame: State<PongGameState>) {
-    Canvas(modifier = Modifier.fillMaxSize()) {
+    // Own layer: a tick re-records only the board, and the twinkling stars behind
+    // don't force the board to be re-recorded at the display rate.
+    Canvas(modifier = Modifier.fillMaxSize().graphicsLayer()) {
         val state = frame.value
         // Center dashed line
         val dashLen = 20f
@@ -536,31 +551,13 @@ private fun GameCanvas(frame: State<PongGameState>) {
 
         // Ball glow + body
         if (state.phase == GamePhase.PLAYING || state.phase == GamePhase.POINT_SCORED || state.phase == GamePhase.PAUSED) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        SoftPink.copy(alpha = 0.35f),
-                        SoftPink.copy(alpha = 0.08f),
-                        Color.Transparent,
-                    ),
-                    center = Offset(state.ballX, state.ballY),
-                    radius = state.ballRadius * 3.5f,
-                ),
-                radius = state.ballRadius * 3.5f,
-                center = Offset(state.ballX, state.ballY),
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(AlienPink, SoftPink),
-                    center = Offset(
-                        state.ballX - state.ballRadius * 0.25f,
-                        state.ballY - state.ballRadius * 0.25f,
-                    ),
-                    radius = state.ballRadius * 1.5f,
-                ),
-                radius = state.ballRadius,
-                center = Offset(state.ballX, state.ballY),
-            )
+            // Cached gradients built for a ball of radius BALL_UNIT, scaled to the ball.
+            translate(state.ballX, state.ballY) {
+                scale(state.ballRadius / BALL_UNIT, pivot = Offset.Zero) {
+                    drawCircle(BallGlowBrush, BALL_UNIT * 3.5f, Offset.Zero)
+                    drawCircle(BallBodyBrush, BALL_UNIT, Offset.Zero)
+                }
+            }
         }
 
         // Player paddle bar
@@ -619,7 +616,7 @@ private fun PongCreature(
     }
 
     Image(
-        painter = painterResource(id = drawableRes),
+        bitmap = rememberScaledImage(drawableRes, (creatureSizePx * 1.12f).toInt()),
         contentDescription = "Sphere Deflection Being",
         modifier = Modifier
             // Position and hit pulse are read in the layout/draw lambdas, so the paddle

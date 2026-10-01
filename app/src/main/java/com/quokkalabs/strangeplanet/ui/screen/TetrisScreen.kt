@@ -1,5 +1,8 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import com.quokkalabs.strangeplanet.ui.components.PauseOnBackground
+import com.quokkalabs.strangeplanet.data.model.Tetromino
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -116,6 +119,24 @@ private class CellSprites {
     }
 }
 
+private val GhostStroke = Stroke(1.5f)
+
+/** Ghost-piece landing row, recomputed only when the board or the piece changes. */
+private class GhostRow {
+    private var grid: Any? = null
+    private var piece: Tetromino? = null
+    private var row = 0
+
+    fun rowFor(engine: TetrisEngine, grid: List<List<TetroType?>>, piece: Tetromino): Int {
+        if (grid !== this.grid || piece != this.piece) {
+            row = engine.ghostRow(grid, piece)
+            this.grid = grid
+            this.piece = piece
+        }
+        return row
+    }
+}
+
 /** The part of [TetrisState] shown outside the well; changes only on game events. */
 private data class TetrisHud(
     val score: Int,
@@ -173,10 +194,14 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
     val state by remember {
         derivedStateOf {
             val s = liveState.value
-            TetrisHud(s.score, s.highScore, s.level, s.lines, s.phase, s.next, s.clearingRows)
+            // LOCKING is PLAYING as far as the HUD and handlers are concerned; mapping
+            // it avoids a full-screen recompose every time a piece lands.
+            val phase = if (s.phase == TetrisPhase.LOCKING) TetrisPhase.PLAYING else s.phase
+            TetrisHud(s.score, s.highScore, s.level, s.lines, phase, s.next, s.clearingRows)
         }
     }
     val cellSprites = remember { CellSprites() }
+    val ghost = remember { GhostRow() }
     val density = LocalDensity.current
     val engine = remember { TetrisEngine() }
 
@@ -196,6 +221,9 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
             else -> onBack()
         }
     }
+
+    // Screen off / app backgrounded → pause (Tetris used to keep playing unseen).
+    PauseOnBackground { viewModel.pauseGame() }
 
     DisposableEffect(Unit) {
         viewModel.startGame()
@@ -289,9 +317,43 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                 val gridLeft = (boxW - gridW) / 2f
                 val gridTop = (boxH - gridH) / 2f
 
+                // Starfield + grid never change, so they get their own layer that is
+                // recorded once instead of on every tick with the well.
+                Canvas(Modifier.fillMaxSize().graphicsLayer()) {
+                    // Starfield
+                    val rng = java.util.Random(54321L)
+                    repeat(25) {
+                        drawCircle(
+                            Color.White.copy(alpha = 0.08f + rng.nextFloat() * 0.15f),
+                            rng.nextFloat() * 1.0f + 0.4f,
+                            Offset(rng.nextFloat() * size.width, rng.nextFloat() * size.height),
+                        )
+                    }
+
+                    // Grid background
+                    drawRoundRect(
+                        Color.White.copy(alpha = 0.04f),
+                        Offset(gridLeft - 3f, gridTop - 3f),
+                        Size(gridW + 6f, gridH + 6f),
+                        CornerRadius(8f, 8f),
+                    )
+                    for (c in 0..TetrisEngine.COLS) {
+                        drawLine(Color.White.copy(alpha = 0.06f),
+                            Offset(gridLeft + c * cellSz, gridTop),
+                            Offset(gridLeft + c * cellSz, gridTop + gridH))
+                    }
+                    for (r in 0..TetrisEngine.ROWS) {
+                        drawLine(Color.White.copy(alpha = 0.06f),
+                            Offset(gridLeft, gridTop + r * cellSz),
+                            Offset(gridLeft + gridW, gridTop + r * cellSz))
+                    }
+                }
+
                 Canvas(
                     Modifier
                         .fillMaxSize()
+                        // Own layer: a tick re-records only the well.
+                        .graphicsLayer()
                         // tap = rotate
                         .pointerInput(Unit) {
                             detectTapGestures(onTap = { viewModel.onRotate() })
@@ -324,34 +386,6 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                         },
                 ) {
                     val state = liveState.value
-                    // Starfield
-                    val rng = java.util.Random(54321L)
-                    repeat(25) {
-                        drawCircle(
-                            Color.White.copy(alpha = 0.08f + rng.nextFloat() * 0.15f),
-                            rng.nextFloat() * 1.0f + 0.4f,
-                            Offset(rng.nextFloat() * size.width, rng.nextFloat() * size.height),
-                        )
-                    }
-
-                    // Grid background
-                    drawRoundRect(
-                        Color.White.copy(alpha = 0.04f),
-                        Offset(gridLeft - 3f, gridTop - 3f),
-                        Size(gridW + 6f, gridH + 6f),
-                        CornerRadius(8f, 8f),
-                    )
-                    for (c in 0..TetrisEngine.COLS) {
-                        drawLine(Color.White.copy(alpha = 0.06f),
-                            Offset(gridLeft + c * cellSz, gridTop),
-                            Offset(gridLeft + c * cellSz, gridTop + gridH))
-                    }
-                    for (r in 0..TetrisEngine.ROWS) {
-                        drawLine(Color.White.copy(alpha = 0.06f),
-                            Offset(gridLeft, gridTop + r * cellSz),
-                            Offset(gridLeft + gridW, gridTop + r * cellSz))
-                    }
-
                     // Locked cells
                     for (r in 0 until TetrisEngine.ROWS) {
                         for (c in 0 until TetrisEngine.COLS) {
@@ -375,7 +409,7 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                     // Ghost + active piece
                     val active = state.active
                     if (active != null && state.phase != TetrisPhase.CLEARING) {
-                        val ghostR = engine.ghostRow(state.grid, active)
+                        val ghostR = ghost.rowFor(engine, state.grid, active)
                         if (ghostR > active.row) {
                             engine.cells(active.copy(row = ghostR)).forEach { (r, c) ->
                                 if (r in 0 until TetrisEngine.ROWS) {
@@ -386,7 +420,7 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                                         Offset(gridLeft + c * cellSz + inset, gridTop + r * cellSz + inset),
                                         Size(inner, inner),
                                         CornerRadius(cellSz * 0.18f, cellSz * 0.18f),
-                                        style = Stroke(1.5f),
+                                        style = GhostStroke,
                                     )
                                 }
                             }

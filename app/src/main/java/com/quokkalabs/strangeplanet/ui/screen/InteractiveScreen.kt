@@ -94,7 +94,7 @@ fun InteractiveScreen(
             Planet(
                 modifier = Modifier.align(Alignment.Center),
                 size = 180.dp,
-                glowBoost = state.planetGlowBoost,
+                glowBoost = { frame.value.planetGlowBoost },
                 onTap = { viewModel.onPlanetTapped() },
             )
 
@@ -151,6 +151,7 @@ fun InteractiveScreen(
 
 /** [UiState] without per-frame creature motion, for everything that isn't drawn per frame. */
 private fun UiState.withoutMotion() = copy(
+    planetGlowBoost = 0f,
     creatures = creatures.map {
         it.copy(x = 0f, y = 0f, vx = 0f, vy = 0f, rotation = 0f, angularVelocity = 0f)
     },

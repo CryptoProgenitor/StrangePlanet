@@ -293,9 +293,8 @@ class StrangePlanetViewModel(application: Application) : AndroidViewModel(applic
         engine.startOrbit(_uiState.value.creatures)
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        soundManager.release()
-        ttsManager.shutdown()
-    }
+    // No onCleared() release: soundManager and ttsManager belong to StrangePlanetApp
+    // and live as long as the process. Releasing them here (when the activity is
+    // backed out of) left sound and speech dead for the live wallpaper and for the
+    // app when reopened in the same process.
 }

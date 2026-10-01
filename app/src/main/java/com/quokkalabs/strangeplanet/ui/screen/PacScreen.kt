@@ -1,5 +1,7 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import androidx.compose.ui.graphics.graphicsLayer
+import com.quokkalabs.strangeplanet.audio.ToneSfx
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Canvas as GraphicsCanvas
@@ -10,7 +12,6 @@ import com.quokkalabs.strangeplanet.ui.components.decodeScaled
 import kotlin.math.ceil
 import android.Manifest
 import android.content.Context
-import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
 import android.os.VibrationEffect
@@ -22,11 +23,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -264,25 +260,13 @@ fun PacScreen(
         }
     }
 
-    // Linear clock (radians) — each sock derives its own phase offset so the
-    // halos pulse out of sync with one another.
-    val pulseClock by rememberInfiniteTransition(label = "sockPulse").animateFloat(
-        initialValue = 0f,
-        targetValue = (2.0 * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "sockPulseClock",
-    )
 
     // Tone-based SFX (gated by the sound setting).
-    val toneGen = remember {
-        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 70) }.getOrNull()
-    }
-    DisposableEffect(Unit) { onDispose { toneGen?.release() } }
+    // Beeps are played on a background thread (see ToneSfx).
+    val toneGen = remember { ToneSfx(70) }
+    DisposableEffect(Unit) { onDispose { toneGen.release() } }
     fun beep(tone: Int, ms: Int) {
-        if (settings.soundEnabled) runCatching { toneGen?.startTone(tone, ms) }
+        if (settings.soundEnabled) toneGen.play(tone, ms)
     }
     LaunchedEffect(state.score) {
         if (state.score > 0) beep(ToneGenerator.TONE_PROP_BEEP, 40)
@@ -381,7 +365,9 @@ fun PacScreen(
                     decodeScaled(context.resources, resId, bSz)
                 }
 
-                Canvas(modifier = Modifier.fillMaxSize()) {
+                // Own layer: a tick re-records only the board, and the twinkling stars behind
+                // don't force the board to be re-recorded at the display rate.
+                Canvas(modifier = Modifier.fillMaxSize().graphicsLayer()) {
                     val state = liveState.value
                     // Maze floor + walls: static per level, so drawn once into a bitmap
                     // instead of hundreds of rounded rects every frame.
@@ -403,7 +389,11 @@ fun PacScreen(
                         )
                     }
 
-                    // Socks (power pellets) — fabric tube + pulsing halo
+                    // Socks (power pellets) — fabric tube + pulsing halo. The pulse clock
+                    // (radians, 1.8 s period) is read from the time while drawing; an
+                    // infinite animation here made the whole board redraw at the display
+                    // rate (120 Hz), even while paused.
+                    val pulseClock = (System.nanoTime() / 1_000_000L % 1800L) / 1800f * (2f * Math.PI.toFloat())
                     state.socks.forEach { k ->
                         val c = k % state.cols
                         val r = k / state.cols

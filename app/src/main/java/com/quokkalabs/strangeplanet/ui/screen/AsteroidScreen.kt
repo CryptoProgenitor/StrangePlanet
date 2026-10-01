@@ -1,10 +1,11 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import androidx.compose.ui.graphics.graphicsLayer
+import com.quokkalabs.strangeplanet.audio.ToneSfx
 import androidx.compose.runtime.derivedStateOf
 import com.quokkalabs.strangeplanet.data.model.AsteroidGameState
 import com.quokkalabs.strangeplanet.data.model.Ship
 import com.quokkalabs.strangeplanet.ui.components.decodeScaled
-import android.media.AudioManager
 import android.media.ToneGenerator
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -133,19 +134,16 @@ fun AsteroidScreen(
     PauseOnBackground { viewModel.pauseGame() }
 
     // Tone-based SFX (gated by the sound setting).
-    val toneGen = remember {
-        runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 80) }.getOrNull()
-    }
-    DisposableEffect(Unit) { onDispose { toneGen?.release() } }
+    // Beeps are played on a background thread (see ToneSfx).
+    val toneGen = remember { ToneSfx(80) }
+    DisposableEffect(Unit) { onDispose { toneGen.release() } }
 
     // "Woo-woo woo" when an uninvited oval vessel arrives.
     val ufoPresent = state.ufo != null
     LaunchedEffect(ufoPresent) {
         if (ufoPresent && settings.soundEnabled) {
             repeat(3) {
-                runCatching {
-                    toneGen?.startTone(ToneGenerator.TONE_CDMA_LOW_L, 200)
-                }
+                toneGen.play(ToneGenerator.TONE_CDMA_LOW_L, 200)
                 kotlinx.coroutines.delay(260)
             }
         }
@@ -153,7 +151,7 @@ fun AsteroidScreen(
 
     val soundOn by rememberUpdatedState(settings.soundEnabled)
     fun tone(t: Int, ms: Int) {
-        if (soundOn) runCatching { toneGen?.startTone(t, ms) }
+        if (soundOn) toneGen.play(t, ms)
     }
 
     // Event SFX: blaster fire, debris impact, hyperspace jump. Baselines reset
@@ -186,7 +184,7 @@ fun AsteroidScreen(
     val thrusting = state.ship?.thrustOn == true && state.phase == AsteroidPhase.PLAYING
     LaunchedEffect(thrusting) {
         while (thrusting && soundOn) {
-            runCatching { toneGen?.startTone(ToneGenerator.TONE_CDMA_LOW_L, 90) }
+            toneGen.play(ToneGenerator.TONE_CDMA_LOW_L, 90)
             kotlinx.coroutines.delay(120)
         }
     }
@@ -235,7 +233,9 @@ fun AsteroidScreen(
                     },
             )
 
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            // Own layer: a tick re-records only the board, and the twinkling stars behind
+            // don't force the board to be re-recorded at the display rate.
+            Canvas(modifier = Modifier.fillMaxSize().graphicsLayer()) {
                 val state = liveState.value
                 val sMin = minOf(size.width, size.height)
                 val pulseT = (System.nanoTime() / 1_000_000L % 1400L) / 1400f

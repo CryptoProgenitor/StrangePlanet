@@ -1,5 +1,6 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
@@ -223,7 +224,9 @@ fun SpaceInvadersScreen(
                 }
 
                 // ── Game Canvas ─────────────────────────────────────────────
-                Canvas(modifier = Modifier.fillMaxSize()) {
+                // Own layer: a tick re-records only the board, and the twinkling stars behind
+                // don't force the board to be re-recorded at the display rate.
+                Canvas(modifier = Modifier.fillMaxSize().graphicsLayer()) {
                     val state = liveState.value
                     // Invaders
                     state.invaders.forEach { inv ->

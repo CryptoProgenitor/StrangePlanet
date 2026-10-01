@@ -1,6 +1,5 @@
 package com.quokkalabs.strangeplanet.audio
 
-import android.media.AudioManager
 import android.media.ToneGenerator
 
 /**
@@ -9,34 +8,30 @@ import android.media.ToneGenerator
  */
 class PongSoundManager {
 
-    private var toneGenerator: ToneGenerator? = try {
-        ToneGenerator(AudioManager.STREAM_MUSIC, 60)
-    } catch (_: Exception) {
-        null
-    }
+    // Beeps are played on a background thread (see ToneSfx).
+    private val tones = ToneSfx(60)
 
     /** Player paddle hit — bright high ping. */
     fun playPlayerHit() {
-        toneGenerator?.startTone(ToneGenerator.TONE_DTMF_9, 50)
+        tones.play(ToneGenerator.TONE_DTMF_9, 50)
     }
 
     /** AI/opponent paddle hit — deeper pong. */
     fun playAiHit() {
-        toneGenerator?.startTone(ToneGenerator.TONE_DTMF_1, 50)
+        tones.play(ToneGenerator.TONE_DTMF_1, 50)
     }
 
     /** Ball bouncing off side wall — short blip. */
     fun playWallBounce() {
-        toneGenerator?.startTone(ToneGenerator.TONE_DTMF_D, 25)
+        tones.play(ToneGenerator.TONE_DTMF_D, 25)
     }
 
     /** Point scored — longer celebratory tone. */
     fun playScore() {
-        toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 120)
+        tones.play(ToneGenerator.TONE_PROP_BEEP, 120)
     }
 
     fun release() {
-        toneGenerator?.release()
-        toneGenerator = null
+        tones.release()
     }
 }

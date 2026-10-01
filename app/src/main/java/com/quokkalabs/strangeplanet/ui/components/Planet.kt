@@ -1,5 +1,6 @@
 package com.quokkalabs.strangeplanet.ui.components
 
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -27,7 +28,7 @@ import androidx.compose.ui.unit.dp
 fun Planet(
     modifier: Modifier = Modifier,
     size: Dp = 160.dp,
-    glowBoost: Float = 0f,
+    glowBoost: () -> Float = { 0f },
     onTap: () -> Unit = {},
 ) {
     val planetColor = Color(0xFFE8B4C8)
@@ -60,9 +61,11 @@ fun Planet(
     Canvas(
         modifier = modifier
             .size(size)
+            // Own layer: the planet's pulse redraws only the planet.
+            .graphicsLayer()
             .pointerInput(Unit) { detectTapGestures { onTap() } },
     ) {
-        val effectiveGlow = glowPulse + glowBoost
+        val effectiveGlow = glowPulse + glowBoost()
         val cx = this.size.width / 2
         val cy = this.size.height / 2
         val planetRadius = this.size.minDimension * 0.25f
