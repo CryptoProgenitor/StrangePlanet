@@ -25,6 +25,7 @@ Prefer the `/deploy` skill (`./.claude/skills/deploy/deploy.ps1`) — it builds,
 ```powershell
 .\gradlew.bat assembleDebug                      # build
 .\gradlew.bat installDebug                       # build + install on all connected devices
+.\gradlew.bat testDebugUnitTest                 # game-engine unit tests (JVM, ~1 s; run before committing engine changes)
 adb shell am start -S -n com.quokkalabs.strangeplanet/.MainActivity   # (re)launch
 adb logcat -d -b crash                           # crashes since last clear (clear: adb logcat -b crash -c)
 adb logcat --pid=$(adb shell pidof com.quokkalabs.strangeplanet)      # app log (Bash tool)
@@ -96,6 +97,7 @@ Launcher titles → code:
 
 ## Performance
 
+- Engine changes must keep `MergeEngineGoldenTest` (and the other domain tests) green; tests marked `@Ignore("BUG: ...")` document known engine bugs.
 - Game loops run on `AndroidUiDispatcher.Main` and pace with `FrameTicker.awaitTick()` (fixed 60 ticks/s from vsync) — never `delay(16)`.
 - A game's `StateFlow` emits every tick. Read it in the Canvas **draw** lambda (`liveState.value`), and give the rest of the screen a `derivedStateOf` summary (see `MergeHud`, `TetrisHud`) so the screen doesn't recompose 60×/s.
 - Don't build gradients/paths per entity per frame: cache sprites (`OrbSprites`, `CellSprites`) or brushes. Decode bitmaps at drawn size with `rememberScaledImage`/`decodeScaled`. Sprite PNGs live in `drawable-nodpi` and must always be drawn at an explicit size.

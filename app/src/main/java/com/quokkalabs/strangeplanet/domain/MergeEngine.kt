@@ -158,13 +158,17 @@ class MergeEngine(
         // ── Integrate (2 substeps) ─────────────────────────────────────────
         // Slow-mo scales the timestep so the whole board drifts cinematically
         // while a void is collapsing; collisions/merges still run each frame.
+        // The simulation runs on reusable float buffers (loaded once, written back
+        // once) instead of copying every Orb on every substep and collision pass —
+        // that was ~16 copies per orb per tick, the main source of GC churn.
         val timeScale = if (slowmoTicks > 0) 0.4f else 1f
         val dt = (1f / 60f) / 2f * timeScale
+        val n = orbs.size
+        loadBodies(orbs)
         repeat(2) {
-            for (i in orbs.indices) {
-                val o = orbs[i]
-                var vx = o.vx
-                var vy = o.vy + gravity * dt
+            for (i in 0 until n) {
+                var vx = bVx[i]
+                var vy = bVy[i] + gravity * dt
                 vx *= airDrag
                 vy *= airDrag
                 val sp = hypot(vx, vy)
@@ -172,18 +176,26 @@ class MergeEngine(
                     val k = maxSpeed / sp
                     vx *= k; vy *= k
                 }
-                var omega = (o.omega * angularDrag).coerceIn(-maxOmega, maxOmega)
-                orbs[i] = o.copy(
-                    x = o.x + vx * dt,
-                    y = o.y + vy * dt,
-                    vx = vx,
-                    vy = vy,
-                    angle = o.angle + omega * dt,
-                    omega = omega,
-                )
+                val omega = (bOmega[i] * angularDrag).coerceIn(-maxOmega, maxOmega)
+                bX[i] = bX[i] + vx * dt
+                bY[i] = bY[i] + vy * dt
+                bVx[i] = vx
+                bVy[i] = vy
+                bAngle[i] = bAngle[i] + omega * dt
+                bOmega[i] = omega
             }
-            resolveWalls(orbs)
-            repeat(3) { resolveCollisions(orbs) }
+            resolveWalls(n)
+            repeat(3) { resolveCollisions(n) }
+        }
+        for (i in 0 until n) {
+            orbs[i] = orbs[i].copy(
+                x = bX[i],
+                y = bY[i],
+                vx = bVx[i],
+                vy = bVy[i],
+                angle = bAngle[i],
+                omega = bOmega[i],
+            )
         }
 
         // ── Merge pass ──────────────────────────────────────────────────────
@@ -192,17 +204,17 @@ class MergeEngine(
         if (mergeCooldown > 0) {
             mergeCooldown--
         } else {
-        val merged = HashSet<Long>()
+        val merged = mergedFlags(orbs.size)
         val survivors = ArrayList<Orb>(orbs.size)
         val spawned = ArrayList<Orb>()
         var mergedAny = false
         for (i in orbs.indices) {
             val a = orbs[i]
-            if (a.id in merged) continue
+            if (merged[i]) continue
             var didMerge = false
             for (j in i + 1 until orbs.size) {
                 val b = orbs[j]
-                if (b.tier != a.tier || b.id in merged) continue
+                if (b.tier != a.tier || merged[j]) continue
                 val ra = radiusOf(a.tier)
                 val rb = radiusOf(b.tier)
                 val d = hypot(b.x - a.x, b.y - a.y)
@@ -214,8 +226,8 @@ class MergeEngine(
                 // pixel floor so small orbs get the same effective slack.
                 val mergeGap = (ra + rb) * 1.06f + vesselWidth * 0.012f
                 if (d < mergeGap) {
-                    merged.add(a.id)
-                    merged.add(b.id)
+                    merged[i] = true
+                    merged[j] = true
                     val mx = (a.x + b.x) / 2f
                     val my = (a.y + b.y) / 2f
                     val formed = a.tier.next
@@ -229,9 +241,9 @@ class MergeEngine(
                         var consumed = 0
                         for (k in orbs.indices) {
                             val c = orbs[k]
-                            if (c.id in merged) continue
+                            if (merged[k]) continue
                             if (hypot(c.x - mx, c.y - my) < voidR + radiusOf(c.tier)) {
-                                merged.add(c.id)
+                                merged[k] = true
                                 consuming.add(ConsumingOrb(c.tier, c.x, c.y, mx, my))
                                 score += (c.tier.ordinal + 1) * 8
                                 consumed++
@@ -265,9 +277,9 @@ class MergeEngine(
                     break
                 }
             }
-            if (!didMerge) survivors.add(a)
         }
-        survivors.removeAll { it.id in merged }
+        // Everything not merged or consumed survives, in board order.
+        for (i in orbs.indices) if (!merged[i]) survivors.add(orbs[i])
         survivors.addAll(spawned)
         orbs = survivors
         // Pause the next merge step so a cascade is seen, not blurred.
@@ -302,14 +314,57 @@ class MergeEngine(
         return s
     }
 
-    private fun resolveWalls(orbs: MutableList<Orb>) {
-        for (i in orbs.indices) {
+    // ── Simulation buffers ──────────────────────────────────────────────────
+    // One slot per orb, reused every tick. Per-tier constants are cached per slot
+    // (the same values the per-call radiusOf/massOf/inertiaOf would give).
+    private var bX = FloatArray(0)
+    private var bY = FloatArray(0)
+    private var bVx = FloatArray(0)
+    private var bVy = FloatArray(0)
+    private var bAngle = FloatArray(0)
+    private var bOmega = FloatArray(0)
+    private var bR = FloatArray(0)
+    private var bMass = FloatArray(0)
+    private var bInertia = FloatArray(0)
+    private var bMu = FloatArray(0)
+    private var bMerged = BooleanArray(0)
+
+    private fun loadBodies(orbs: List<Orb>) {
+        val n = orbs.size
+        if (n > bX.size) {
+            val cap = maxOf(n, bX.size * 2, 32)
+            bX = FloatArray(cap); bY = FloatArray(cap)
+            bVx = FloatArray(cap); bVy = FloatArray(cap)
+            bAngle = FloatArray(cap); bOmega = FloatArray(cap)
+            bR = FloatArray(cap); bMass = FloatArray(cap)
+            bInertia = FloatArray(cap); bMu = FloatArray(cap)
+        }
+        for (i in 0 until n) {
             val o = orbs[i]
-            val r = radiusOf(o.tier)
-            val m = massOf(o.tier)
-            val inertia = inertiaOf(o.tier)
-            var x = o.x; var y = o.y
-            var vx = o.vx; var vy = o.vy; var omega = o.omega
+            bX[i] = o.x; bY[i] = o.y
+            bVx[i] = o.vx; bVy[i] = o.vy
+            bAngle[i] = o.angle; bOmega[i] = o.omega
+            bR[i] = radiusOf(o.tier)
+            bMass[i] = massOf(o.tier)
+            bInertia[i] = inertiaOf(o.tier)
+            bMu[i] = o.tier.mu
+        }
+    }
+
+    /** Cleared merge flags, one per orb index. */
+    private fun mergedFlags(n: Int): BooleanArray {
+        if (n > bMerged.size) bMerged = BooleanArray(maxOf(n, bMerged.size * 2, 32))
+        bMerged.fill(false, 0, n)
+        return bMerged
+    }
+
+    private fun resolveWalls(n: Int) {
+        for (i in 0 until n) {
+            val r = bR[i]
+            val m = bMass[i]
+            val inertia = bInertia[i]
+            var x = bX[i]; var y = bY[i]
+            var vx = bVx[i]; var vy = bVy[i]; var omega = bOmega[i]
             val hitsSide = x - r < vesselLeft || x + r > vesselRight
             val hitsFloor = y + r > vesselBottom
             if (!hitsSide && !hitsFloor) continue
@@ -321,7 +376,7 @@ class MergeEngine(
                 vx = -vx * wallDamp
                 // Tangent is vertical; contact at ±r on x.
                 val slip = vy - omega * r
-                val mu = (floorMu * o.tier.mu).coerceAtMost(1.2f)
+                val mu = (floorMu * bMu[i]).coerceAtMost(1.2f)
                 val jn = impactN + m * gravity * (1f / 60f) * 0.4f
                 val kt = 3f / m
                 var jt = -slip / kt
@@ -338,7 +393,7 @@ class MergeEngine(
                 vy = -vy * wallDamp
                 // Contact tangential slip at the bottom point.
                 val slip = vx - omega * r
-                val mu = (floorMu * o.tier.mu).coerceAtMost(1.2f)
+                val mu = (floorMu * bMu[i]).coerceAtMost(1.2f)
                 val jn = impactN + m * gravity * (1f / 60f)
                 val kt = 3f / m                    // 1/m + r²/I  (I = ½mr²)
                 var jt = -slip / kt
@@ -348,19 +403,18 @@ class MergeEngine(
                 omega += -(r * jt) / inertia
             }
 
-            orbs[i] = o.copy(x = x, y = y, vx = vx, vy = vy, omega = omega)
+            bX[i] = x; bY[i] = y
+            bVx[i] = vx; bVy[i] = vy; bOmega[i] = omega
         }
     }
 
-    private fun resolveCollisions(orbs: MutableList<Orb>) {
-        for (i in orbs.indices) {
-            for (j in i + 1 until orbs.size) {
-                val a = orbs[i]
-                val b = orbs[j]
-                val ra = radiusOf(a.tier)
-                val rb = radiusOf(b.tier)
-                val dx = b.x - a.x
-                val dy = b.y - a.y
+    private fun resolveCollisions(n: Int) {
+        for (i in 0 until n) {
+            for (j in i + 1 until n) {
+                val ra = bR[i]
+                val rb = bR[j]
+                val dx = bX[j] - bX[i]
+                val dy = bY[j] - bY[i]
                 val minDist = ra + rb
                 // Most pairs are far apart: reject them before paying for the sqrt.
                 val distSq = dx * dx + dy * dy
@@ -370,40 +424,40 @@ class MergeEngine(
                     val nx = dx / dist
                     val ny = dy / dist
                     val overlap = (minDist - dist) / 2f
-                    val ax = a.x - nx * overlap
-                    val ay = a.y - ny * overlap
-                    val bx = b.x + nx * overlap
-                    val by = b.y + ny * overlap
+                    val ax = bX[i] - nx * overlap
+                    val ay = bY[i] - ny * overlap
+                    val bx = bX[j] + nx * overlap
+                    val by = bY[j] + ny * overlap
                     // Equal-mass impulse along the contact normal (keeps the
                     // tuned stacking/bounce feel unchanged).
-                    val rvx = b.vx - a.vx
-                    val rvy = b.vy - a.vy
+                    val rvx = bVx[j] - bVx[i]
+                    val rvy = bVy[j] - bVy[i]
                     val relN = rvx * nx + rvy * ny
-                    var avx = a.vx; var avy = a.vy
-                    var bvx = b.vx; var bvy = b.vy
-                    var aw = a.omega; var bw = b.omega
+                    var avx = bVx[i]; var avy = bVy[i]
+                    var bvx = bVx[j]; var bvy = bVy[j]
+                    var aw = bOmega[i]; var bw = bOmega[j]
                     if (relN < 0f) {
                         val jImp = -(1f + restitution) * relN / 2f
                         avx -= jImp * nx; avy -= jImp * ny
                         bvx += jImp * nx; bvy += jImp * ny
 
                         // ── Tangential (Coulomb) friction + torque ──────────
-                        val ma = massOf(a.tier)
-                        val mb = massOf(b.tier)
-                        val ia = inertiaOf(a.tier)
-                        val ib = inertiaOf(b.tier)
+                        val ma = bMass[i]
+                        val mb = bMass[j]
+                        val ia = bInertia[i]
+                        val ib = bInertia[j]
                         // Tangent perpendicular to the contact normal.
                         val tx = -ny
                         val ty = nx
                         // Relative tangential surface speed (incl. spin).
-                        val vt = (a.vx - b.vx) * tx + (a.vy - b.vy) * ty +
+                        val vt = (bVx[i] - bVx[j]) * tx + (bVy[i] - bVy[j]) * ty +
                             aw * ra + bw * rb
                         // k_t = 1/ma+1/mb + ra²/Ia + rb²/Ib  (= 3/ma+3/mb).
                         val kt = 3f / ma + 3f / mb
                         // Physically-correct normal impulse for the cap.
                         val mEff = (ma * mb) / (ma + mb)
                         val jnMag = mEff * (1f + restitution) * (-relN)
-                        val muPair = (a.tier.mu + b.tier.mu).coerceAtMost(1.4f)
+                        val muPair = (bMu[i] + bMu[j]).coerceAtMost(1.4f)
                         var jt = -vt / kt
                         val maxJt = muPair * jnMag
                         jt = jt.coerceIn(-maxJt, maxJt)
@@ -412,11 +466,11 @@ class MergeEngine(
                         aw += ra * jt / ia
                         bw += rb * jt / ib
                     }
-                    orbs[i] = a.copy(x = ax, y = ay, vx = avx, vy = avy, omega = aw)
-                    orbs[j] = b.copy(x = bx, y = by, vx = bvx, vy = bvy, omega = bw)
-                } else if (dist <= 0.0001f) {
+                    bX[i] = ax; bY[i] = ay; bVx[i] = avx; bVy[i] = avy; bOmega[i] = aw
+                    bX[j] = bx; bY[j] = by; bVx[j] = bvx; bVy[j] = bvy; bOmega[j] = bw
+                } else {
                     // Perfectly coincident — nudge apart deterministically.
-                    orbs[j] = b.copy(x = b.x + ra * 0.5f)
+                    bX[j] = bX[j] + ra * 0.5f
                 }
             }
         }
