@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(adb *)",
+      "Bash(./gradlew *)",
+      "Bash(./gradlew.bat *)",
+      "PowerShell(adb *)",
+      "PowerShell(./gradlew.bat *)",
+      "PowerShell(.\\\\gradlew.bat *)",
+      "PowerShell(./.claude/skills/deploy/deploy.ps1 *)",
+      "PowerShell(./.claude/skills/deploy/start-emulator.ps1 *)"
+    ],
+    "ask": [
+      "Bash(adb uninstall *)",
+      "Bash(adb -s * uninstall *)",
+      "Bash(adb shell pm clear *)",
+      "Bash(adb -s * shell pm clear *)",
+      "PowerShell(adb uninstall *)",
+      "PowerShell(adb -s * uninstall *)",
+      "PowerShell(adb shell pm clear *)",
+      "PowerShell(adb -s * shell pm clear *)"
+    ]
+  }
+}
