@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class SpaceInvadersViewModel(application: Application) : AndroidViewModel(application) {
@@ -48,55 +47,52 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
         engine = eng
         _state.value = eng.createInitialState()
 
-        viewModelScope.launch {
-            while (isActive) {
-                delay(16)
-                val e = engine ?: continue
-                val touchX = if (isTouching) playerTouchX else null
-                val before = _state.value
-                _state.update { e.update(it, touchX) }
-                val after = _state.value
+        viewModelScope.launchFixedTickLoop {
+            val e = engine ?: return@launchFixedTickLoop
+            val touchX = if (isTouching) playerTouchX else null
+            val before = _state.value
+            _state.update { e.update(it, touchX) }
+            val after = _state.value
 
-                // ── Sound triggers ─────────────────────────────────────
-                if (_siSettings.value.soundEnabled) {
-                    // Kill: score increased
-                    if (after.score > before.score) {
-                        soundManager.playKill()
-                    }
-                    // Player hit: lives decreased
-                    if (after.lives < before.lives) {
-                        soundManager.playPlayerHit()
-                    }
-                    // Shoot: fireCounter wrapped back to 0
-                    if (before.fireCounter > 0 && after.fireCounter == 0 &&
-                        after.phase == SIPhase.PLAYING
-                    ) {
-                        soundManager.playShoot()
-                    }
-                    // Wave clear
-                    if (before.phase == SIPhase.PLAYING &&
-                        after.phase == SIPhase.WAVE_CLEAR
-                    ) {
-                        soundManager.playWaveClear()
-                    }
-                    // Game over
-                    if (before.phase != SIPhase.GAME_OVER &&
-                        after.phase == SIPhase.GAME_OVER
-                    ) {
-                        soundManager.playGameOver()
-                    }
+            // ── Sound triggers ─────────────────────────────────────
+            if (_siSettings.value.soundEnabled) {
+                // Kill: score increased
+                if (after.score > before.score) {
+                    soundManager.playKill()
                 }
+                // Player hit: lives decreased
+                if (after.lives < before.lives) {
+                    soundManager.playPlayerHit()
+                }
+                // Shoot: fireCounter wrapped back to 0
+                if (before.fireCounter > 0 && after.fireCounter == 0 &&
+                    after.phase == SIPhase.PLAYING
+                ) {
+                    soundManager.playShoot()
+                }
+                // Wave clear
+                if (before.phase == SIPhase.PLAYING &&
+                    after.phase == SIPhase.WAVE_CLEAR
+                ) {
+                    soundManager.playWaveClear()
+                }
+                // Game over
+                if (before.phase != SIPhase.GAME_OVER &&
+                    after.phase == SIPhase.GAME_OVER
+                ) {
+                    soundManager.playGameOver()
+                }
+            }
 
-                // Auto-advance after wave clear
-                if (_state.value.phase == SIPhase.WAVE_CLEAR) {
-                    delay(1500)
-                    val s = _state.value
-                    _state.value = e.createInitialState(
-                        wave = s.wave + 1,
-                        score = s.score,
-                        lives = s.lives,
-                    ).copy(phase = SIPhase.PLAYING)
-                }
+            // Auto-advance after wave clear
+            if (_state.value.phase == SIPhase.WAVE_CLEAR) {
+                delay(1500)
+                val s = _state.value
+                _state.value = e.createInitialState(
+                    wave = s.wave + 1,
+                    score = s.score,
+                    lives = s.lives,
+                ).copy(phase = SIPhase.PLAYING)
             }
         }
     }
