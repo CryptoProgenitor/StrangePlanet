@@ -1,5 +1,6 @@
 package com.quokkalabs.strangeplanet.webrtc
 
+import java.util.concurrent.Executors
 import android.content.Context
 import android.util.Log
 import com.quokkalabs.strangeplanet.bluetooth.BluetoothPongManager.NetGameState
@@ -16,6 +17,11 @@ import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+
+/** Disposes WebRTC objects off the main thread, one teardown at a time. */
+private val rtcTeardown = Executors.newSingleThreadExecutor { r ->
+    Thread(r, "webrtc-teardown").apply { isDaemon = true }
+}
 
 /**
  * P2P game transport over WebRTC DataChannel.
@@ -128,15 +134,29 @@ class WebRtcPongManager(private val context: Context) {
     }
 
     fun cleanup() {
-        stateChannel?.close()
-        ctrlChannel?.close()
-        peerConnection?.close()
+        val channels = listOfNotNull(stateChannel, ctrlChannel)
+        val pc = peerConnection
+        val f = factory
         stateChannel = null
         ctrlChannel = null
         peerConnection = null
-        factory?.dispose()
         factory = null
         signalingCallback = null
+        // Closing and disposing the native objects blocks for 10-100+ ms, and cleanup()
+        // runs on the main thread (sometimes from the game loop as a match ends), so it
+        // happens on a background thread. The channels and connection were only ever
+        // closed, never disposed, which leaked their native memory every online match.
+        rtcTeardown.execute {
+            channels.forEach {
+                runCatching {
+                    it.unregisterObserver()
+                    it.close()
+                    it.dispose()
+                }
+            }
+            runCatching { pc?.dispose() } // dispose() also closes the connection
+            runCatching { f?.dispose() }
+        }
         _rtcState.value = RtcState.CLOSED
         _remoteGameState.value = null
         _remoteTouchX.value = null

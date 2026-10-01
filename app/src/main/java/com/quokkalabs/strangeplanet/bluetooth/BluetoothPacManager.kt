@@ -152,7 +152,9 @@ class BluetoothPacManager(private val context: Context) {
 
     private var serverSocket: BluetoothServerSocket? = null
     private var socket: BluetoothSocket? = null
+    @Volatile
     private var dataOut: DataOutputStream? = null
+    private val writer = BtWriter("bt-pac-send")
     private var dataIn: DataInputStream? = null
 
     @Volatile
@@ -321,8 +323,8 @@ class BluetoothPacManager(private val context: Context) {
 
     // ---- data send (host) ----
 
-    fun sendInit(state: PacGameState) {
-        val out = dataOut ?: return
+    fun sendInit(state: PacGameState) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_INIT.toInt())
@@ -349,7 +351,7 @@ class BluetoothPacManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send init failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
@@ -357,8 +359,8 @@ class BluetoothPacManager(private val context: Context) {
         state: PacGameState,
         eatenPellets: Collection<Int>,
         eatenSocks: Collection<Int>,
-    ) {
-        val out = dataOut ?: return
+    ) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_TICK.toInt())
@@ -381,14 +383,14 @@ class BluetoothPacManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send tick failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
     // ---- data send (client) ----
 
-    fun sendDir(dir: PacDir) {
-        val out = dataOut ?: return
+    fun sendDir(dir: PacDir) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_DIR.toInt())
@@ -397,12 +399,12 @@ class BluetoothPacManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send dir failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
-    fun sendPick(type: SeekerType) {
-        val out = dataOut ?: return
+    fun sendPick(type: SeekerType) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_PICK.toInt())
@@ -411,12 +413,12 @@ class BluetoothPacManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send pick failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
-    fun sendControl(action: Byte) {
-        val out = dataOut ?: return
+    fun sendControl(action: Byte) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_CONTROL.toInt())
@@ -425,7 +427,7 @@ class BluetoothPacManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send control failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 

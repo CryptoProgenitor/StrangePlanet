@@ -84,7 +84,9 @@ class BluetoothMergeManager(private val context: Context) {
 
     private var serverSocket: BluetoothServerSocket? = null
     private var socket: BluetoothSocket? = null
+    @Volatile
     private var dataOut: DataOutputStream? = null
+    private val writer = BtWriter("bt-merge-send")
     private var dataIn: DataInputStream? = null
 
     @Volatile
@@ -253,8 +255,8 @@ class BluetoothMergeManager(private val context: Context) {
 
     // ---- data send ----
 
-    fun sendStart(durationSeconds: Int) {
-        val out = dataOut ?: return
+    fun sendStart(durationSeconds: Int) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_START.toInt())
@@ -263,12 +265,12 @@ class BluetoothMergeManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send start failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
-    fun sendScore(score: Int, done: Boolean) {
-        val out = dataOut ?: return
+    fun sendScore(score: Int, done: Boolean) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_SCORE.toInt())
@@ -278,12 +280,12 @@ class BluetoothMergeManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send score failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
-    fun sendQuit() {
-        val out = dataOut ?: return
+    fun sendQuit() = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_QUIT.toInt())

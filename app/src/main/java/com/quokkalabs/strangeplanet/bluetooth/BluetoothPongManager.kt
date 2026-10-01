@@ -104,7 +104,9 @@ class BluetoothPongManager(private val context: Context) {
 
     private var serverSocket: BluetoothServerSocket? = null
     private var socket: BluetoothSocket? = null
+    @Volatile
     private var dataOut: DataOutputStream? = null
+    private val writer = BtWriter("bt-pong-send")
     private var dataIn: DataInputStream? = null
 
     @Volatile
@@ -274,11 +276,11 @@ class BluetoothPongManager(private val context: Context) {
 
     // ---- data send ----
 
-    fun sendGameState(state: PongGameState, hostCreatureIdx: Int = 0, clientCreatureIdx: Int = 0) {
-        val out = dataOut ?: return
+    fun sendGameState(state: PongGameState, hostCreatureIdx: Int = 0, clientCreatureIdx: Int = 0) = writer.send {
+        val out = dataOut ?: return@send
         val sw = state.screenWidth
         val sh = state.screenHeight
-        if (sw <= 0f || sh <= 0f) return
+        if (sw <= 0f || sh <= 0f) return@send
 
         try {
             synchronized(out) {
@@ -307,12 +309,12 @@ class BluetoothPongManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send state failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
-    fun sendTouch(normalizedX: Float?) {
-        val out = dataOut ?: return
+    fun sendTouch(normalizedX: Float?) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_TOUCH.toInt())
@@ -322,12 +324,12 @@ class BluetoothPongManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send touch failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
-    fun sendControl(action: Byte) {
-        val out = dataOut ?: return
+    fun sendControl(action: Byte) = writer.send {
+        val out = dataOut ?: return@send
         try {
             synchronized(out) {
                 out.writeByte(MSG_CONTROL.toInt())
@@ -336,7 +338,7 @@ class BluetoothPongManager(private val context: Context) {
             }
         } catch (e: IOException) {
             Log.e(TAG, "Send control failed", e)
-            handleDisconnect()
+            if (out === dataOut) handleDisconnect()
         }
     }
 
