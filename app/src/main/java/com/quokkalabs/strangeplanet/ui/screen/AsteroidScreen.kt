@@ -1,6 +1,9 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
-import android.graphics.BitmapFactory
+import androidx.compose.runtime.derivedStateOf
+import com.quokkalabs.strangeplanet.data.model.AsteroidGameState
+import com.quokkalabs.strangeplanet.data.model.Ship
+import com.quokkalabs.strangeplanet.ui.components.decodeScaled
 import android.media.AudioManager
 import android.media.ToneGenerator
 import androidx.activity.compose.BackHandler
@@ -48,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
@@ -80,12 +82,29 @@ import com.quokkalabs.strangeplanet.ui.theme.CosmicBlue
 import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.viewmodel.AsteroidViewModel
 
+/** The state minus everything that moves every tick, for the HUD and overlays. */
+private fun AsteroidGameState.withoutMotion() = copy(
+    ship = ship?.let {
+        Ship(0f, 0f, thrustOn = it.thrustOn, hyperspaceCooldown = if (it.hyperspaceCooldown > 0) 1 else 0)
+    },
+    rocks = emptyList(),
+    bullets = emptyList(),
+    ufo = ufo?.let { Ufo(0f, 0f, 0f, 0f, it.small, 0) },
+    ufoBullets = emptyList(),
+    particles = emptyList(),
+    ufoSpawnTick = 0,
+)
+
 @Composable
 fun AsteroidScreen(
     viewModel: AsteroidViewModel,
     onBack: () -> Unit,
 ) {
-    val state by viewModel.state.collectAsState()
+    // Ship, rocks and bullets change every tick but are only read while drawing (and
+    // by the sound-effect watcher); the rest of the screen reads a copy with the
+    // motion stripped, so the HUD recomposes on game events, not 60 times a second.
+    val liveState = viewModel.state.collectAsState()
+    val state by remember { derivedStateOf { liveState.value.withoutMotion() } }
     val settings by viewModel.settings.collectAsState()
     val density = LocalDensity.current
     val view = LocalView.current
@@ -143,7 +162,7 @@ fun AsteroidScreen(
         var pBullets = 0
         var pHyper = 0
         var pScore = 0
-        snapshotFlow { state }.collect { s ->
+        snapshotFlow { liveState.value }.collect { s ->
             if (s.phase != AsteroidPhase.PLAYING) {
                 pBullets = s.bullets.size
                 pHyper = s.ship?.hyperspaceCooldown ?: 0
@@ -191,14 +210,6 @@ fun AsteroidScreen(
         viewModel.setPaused(showExit || showResume)
     }
 
-    val shipBitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.sp_rollsuck)
-            .asImageBitmap()
-    }
-    val rockBitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.sp_socks)
-            .asImageBitmap()
-    }
 
     CosmicBackground(showStars = true) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -209,6 +220,13 @@ fun AsteroidScreen(
                 viewModel.initGame(screenWidth, screenHeight)
             }
 
+            // Sprites decoded at their largest drawn size (large rock, ship), not 500 px.
+            val spriteMin = minOf(screenWidth, screenHeight)
+            val rockPx = (spriteMin * 0.144f).toInt()
+            val shipPx = (spriteMin * 0.20f).toInt()
+            val rockBitmap = remember(rockPx) { decodeScaled(context.resources, R.drawable.sp_socks, rockPx) }
+            val shipBitmap = remember(shipPx) { decodeScaled(context.resources, R.drawable.sp_rollsuck, shipPx) }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -218,6 +236,7 @@ fun AsteroidScreen(
             )
 
             Canvas(modifier = Modifier.fillMaxSize()) {
+                val state = liveState.value
                 val sMin = minOf(size.width, size.height)
                 val pulseT = (System.nanoTime() / 1_000_000L % 1400L) / 1400f
 

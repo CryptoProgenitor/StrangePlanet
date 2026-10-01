@@ -1,6 +1,10 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
-import android.graphics.BitmapFactory
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import com.quokkalabs.strangeplanet.ui.components.decodeScaled
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -43,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -105,19 +108,6 @@ fun StrangeMatchScreen(
 
     LaunchedEffect(Unit) { viewModel.onEnterScreen() }
 
-    // Load all 7 tile bitmaps once at screen level
-    val bitmaps = remember {
-        mapOf(
-            TileType.STAR to BitmapFactory.decodeResource(context.resources, R.drawable.sp_star).asImageBitmap(),
-            TileType.DOG to BitmapFactory.decodeResource(context.resources, R.drawable.sp_dog).asImageBitmap(),
-            TileType.ROLLSUCK to BitmapFactory.decodeResource(context.resources, R.drawable.sp_rollsuck).asImageBitmap(),
-            TileType.UNICORN to BitmapFactory.decodeResource(context.resources, R.drawable.sp_unicorn).asImageBitmap(),
-            TileType.ALIEN_DAD to BitmapFactory.decodeResource(context.resources, R.drawable.sp_alien_dad).asImageBitmap(),
-            TileType.CAT to BitmapFactory.decodeResource(context.resources, R.drawable.sp_cat).asImageBitmap(),
-            TileType.SOCKS to BitmapFactory.decodeResource(context.resources, R.drawable.sp_socks).asImageBitmap(),
-        )
-    }
-
     CosmicBackground(showStars = true) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val screenWidthPx = with(density) { maxWidth.toPx() }
@@ -128,6 +118,24 @@ fun StrangeMatchScreen(
                 screenHeightPx * 0.78f / SM_ROWS,
             )
             val cellSizeDp = with(density) { cellSizePx.toDp() }
+
+            // The 7 tile sprites, decoded off the main thread at the size they're shown
+            // (70% of a cell) — decoding the full PNGs on the main thread caused a hitch
+            // every time the screen opened.
+            val spritePx = (cellSizePx * 0.70f).toInt()
+            val bitmaps by produceState(emptyMap<TileType, ImageBitmap>(), spritePx) {
+                value = withContext(Dispatchers.Default) {
+                    listOf(
+                        TileType.STAR to R.drawable.sp_star,
+                        TileType.DOG to R.drawable.sp_dog,
+                        TileType.ROLLSUCK to R.drawable.sp_rollsuck,
+                        TileType.UNICORN to R.drawable.sp_unicorn,
+                        TileType.ALIEN_DAD to R.drawable.sp_alien_dad,
+                        TileType.CAT to R.drawable.sp_cat,
+                        TileType.SOCKS to R.drawable.sp_socks,
+                    ).associate { (type, res) -> type to decodeScaled(context.resources, res, spritePx) }
+                }
+            }
 
             // HUD pill
             Row(

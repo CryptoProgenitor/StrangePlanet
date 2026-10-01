@@ -1,8 +1,15 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Canvas as GraphicsCanvas
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import com.quokkalabs.strangeplanet.data.model.PacEntity
+import com.quokkalabs.strangeplanet.data.model.PacGameState
+import com.quokkalabs.strangeplanet.ui.components.decodeScaled
+import kotlin.math.ceil
 import android.Manifest
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -63,7 +70,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -103,12 +109,69 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.sin
 
+/** The state minus everything that moves every tick, for the HUD and overlays. */
+private fun PacGameState.withoutMotion() = copy(
+    being = PacEntity(0, 0),
+    pellets = emptySet(),
+    socks = emptySet(),
+    seekers = seekers.map {
+        it.copy(col = 0, row = 0, progress = 0f, dir = PacDir.NONE, penTimer = if (it.penTimer > 0) 1 else 0)
+    },
+    waveTick = 0,
+    frightenedTick = if (frightenedTick > 0) 1 else 0,
+)
+
+/** Maze floor and walls rendered once per maze layout and tile size. */
+private class MazeLayer {
+    private var walls: Set<Int>? = null
+    private var tileSize = 0f
+    private var image: ImageBitmap? = null
+
+    fun DrawScope.drawMaze(state: PacGameState) {
+        val ts = state.tileSize
+        val w = ceil(state.cols * ts).toInt()
+        val h = ceil(state.rows * ts).toInt()
+        if (w <= 0 || h <= 0) return
+        var img = image
+        if (img == null || walls !== state.walls || tileSize != ts) {
+            img = ImageBitmap(w, h)
+            CanvasDrawScope().draw(this, layoutDirection, GraphicsCanvas(img), Size(w.toFloat(), h.toFloat())) {
+                // Maze floor — cuts the cosmic background through so the grid reads
+                // as a discrete playfield.
+                drawRect(
+                    color = DeepNavy.copy(alpha = 0.97f),
+                    size = Size(state.cols * ts, state.rows * ts),
+                )
+                state.walls.forEach { k ->
+                    val c = k % state.cols
+                    val r = k / state.cols
+                    drawRoundRect(
+                        color = CosmicBlue.copy(alpha = 0.70f),
+                        topLeft = Offset(c * ts, r * ts),
+                        size = Size(ts, ts),
+                        cornerRadius = CornerRadius(ts * 0.22f, ts * 0.22f),
+                    )
+                }
+            }
+            image = img
+            walls = state.walls
+            tileSize = ts
+        }
+        drawImage(img, Offset(state.originX, state.originY))
+    }
+}
+
 @Composable
 fun PacScreen(
     viewModel: PacViewModel,
     onBack: () -> Unit,
 ) {
-    val state by viewModel.state.collectAsState()
+    // Being, seekers and pellets change every tick but are only read while drawing;
+    // the rest of the screen reads a copy with the motion stripped, so the HUD and
+    // overlays recompose on game events rather than 60 times a second.
+    val liveState = viewModel.state.collectAsState()
+    val state by remember { derivedStateOf { liveState.value.withoutMotion() } }
+    val mazeLayer = remember { MazeLayer() }
     val settings by viewModel.pacSettings.collectAsState()
     val btState by viewModel.btState.collectAsState()
     val pickedSeeker by viewModel.pickedSeeker.collectAsState()
@@ -181,19 +244,6 @@ fun PacScreen(
         viewModel.setPaused(showExit || showResume)
     }
 
-    val avatarBitmap = remember(settings.avatar) {
-        val resId = when (settings.avatar) {
-            PacAvatar.BEING -> R.drawable.sp_alien_dad
-            PacAvatar.HOUND -> R.drawable.sp_dog
-            PacAvatar.FELINE -> R.drawable.sp_cat
-            PacAvatar.ROLLSUCK -> R.drawable.sp_rollsuck
-            PacAvatar.UNICORN -> R.drawable.sp_unicorn
-        }
-        BitmapFactory.decodeResource(context.resources, resId).asImageBitmap()
-    }
-    val starBitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.sp_star).asImageBitmap()
-    }
 
     val swipeThreshold = with(density) { 24.dp.toPx() }
 
@@ -316,33 +366,28 @@ fun PacScreen(
 
             if (state.tileSize > 0f) {
                 val ts = state.tileSize
+                // Sprites decoded at the size they're drawn (the PNGs are 300–500 px).
+                val starSz = (ts * 0.55f).toInt()
+                val bSz = (ts * 1.5f).toInt()
+                val starBitmap = remember(starSz) { decodeScaled(context.resources, R.drawable.sp_star, starSz) }
+                val avatarBitmap = remember(settings.avatar, bSz) {
+                    val resId = when (settings.avatar) {
+                        PacAvatar.BEING -> R.drawable.sp_alien_dad
+                        PacAvatar.HOUND -> R.drawable.sp_dog
+                        PacAvatar.FELINE -> R.drawable.sp_cat
+                        PacAvatar.ROLLSUCK -> R.drawable.sp_rollsuck
+                        PacAvatar.UNICORN -> R.drawable.sp_unicorn
+                    }
+                    decodeScaled(context.resources, resId, bSz)
+                }
 
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    // Maze floor — cuts the cosmic background through so the
-                    // grid reads as a discrete playfield.
-                    drawRect(
-                        color = DeepNavy.copy(alpha = 0.97f),
-                        topLeft = Offset(state.originX, state.originY),
-                        size = Size(state.cols * ts, state.rows * ts),
-                    )
-
-                    // Maze walls
-                    state.walls.forEach { k ->
-                        val c = k % state.cols
-                        val r = k / state.cols
-                        drawRoundRect(
-                            color = CosmicBlue.copy(alpha = 0.70f),
-                            topLeft = Offset(
-                                state.originX + c * ts,
-                                state.originY + r * ts,
-                            ),
-                            size = Size(ts, ts),
-                            cornerRadius = CornerRadius(ts * 0.22f, ts * 0.22f),
-                        )
-                    }
+                    val state = liveState.value
+                    // Maze floor + walls: static per level, so drawn once into a bitmap
+                    // instead of hundreds of rounded rects every frame.
+                    with(mazeLayer) { drawMaze(state) }
 
                     // Stars
-                    val starSz = (ts * 0.55f).toInt()
                     state.pellets.forEach { k ->
                         val c = k % state.cols
                         val r = k / state.cols
@@ -412,7 +457,6 @@ fun PacScreen(
                         (b.col + b.dir.dc * b.progress + 0.5f) * ts
                     val by = state.originY +
                         (b.row + b.dir.dr * b.progress + 0.5f) * ts
-                    val bSz = (ts * 1.5f).toInt()
                     // Halo glow — concentric soft rings make the being pop
                     // against the busy background.
                     drawCircle(AlienPink.copy(alpha = 0.38f), ts * 1.40f, Offset(bx, by))
