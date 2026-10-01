@@ -1,6 +1,11 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
-import android.graphics.BitmapFactory
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import com.quokkalabs.strangeplanet.data.model.SpaceInvadersState
+import com.quokkalabs.strangeplanet.ui.components.decodeScaled
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -43,7 +48,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -75,12 +79,40 @@ import com.quokkalabs.strangeplanet.ui.theme.DeepNavy
 import com.quokkalabs.strangeplanet.ui.theme.SoftPink
 import com.quokkalabs.strangeplanet.ui.viewmodel.SpaceInvadersViewModel
 
+private const val GLOW_UNIT = 100f
+private val EnemyGreen = Color(0xFF4ADE80)
+
+private fun DrawScope.drawGlow(brush: Brush, x: Float, y: Float, radius: Float) {
+    translate(x, y) {
+        scale(radius / GLOW_UNIT, pivot = Offset.Zero) {
+            drawCircle(brush, GLOW_UNIT, Offset.Zero)
+        }
+    }
+}
+
+/** The state minus everything that moves every tick, for the HUD and overlays. */
+private fun SpaceInvadersState.withoutMotion() = copy(
+    playerX = 0f,
+    invaders = emptyList(),
+    playerProjectiles = emptyList(),
+    enemyProjectiles = emptyList(),
+    invaderDirection = 0,
+    fireCounter = 0,
+    hitPauseTimer = 0,
+    particles = emptyList(),
+    shields = emptyList(),
+)
+
 @Composable
 fun SpaceInvadersScreen(
     viewModel: SpaceInvadersViewModel,
     onBack: () -> Unit,
 ) {
-    val state by viewModel.state.collectAsState()
+    // The game state changes every tick but the board is only read while drawing;
+    // everything else reads a copy with the moving parts stripped, so the HUD and
+    // overlays recompose on score/lives/phase changes rather than 60 times a second.
+    val liveState = viewModel.state.collectAsState()
+    val state by remember { derivedStateOf { liveState.value.withoutMotion() } }
     val siSettings by viewModel.siSettings.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -126,18 +158,20 @@ fun SpaceInvadersScreen(
         }
     }
 
-    // Pre-load sprites as ImageBitmap for Canvas drawing
-    val catBitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.sp_pong_cat).asImageBitmap()
+    // Projectile glows: one gradient each, scaled per shot, not a new one per frame.
+    val playerShotGlow = remember {
+        Brush.radialGradient(
+            colors = listOf(SoftPink.copy(alpha = 0.6f), SoftPink.copy(alpha = 0.1f), Color.Transparent),
+            center = Offset.Zero,
+            radius = GLOW_UNIT,
+        )
     }
-    val dogBitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.sp_pong_dog).asImageBitmap()
-    }
-    val playerBitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.sp_invaders_alien_dad).asImageBitmap()
-    }
-    val sockBitmap = remember {
-        BitmapFactory.decodeResource(context.resources, R.drawable.sp_socks).asImageBitmap()
+    val enemyShotGlow = remember {
+        Brush.radialGradient(
+            colors = listOf(EnemyGreen.copy(alpha = 0.5f), EnemyGreen.copy(alpha = 0.1f), Color.Transparent),
+            center = Offset.Zero,
+            radius = GLOW_UNIT,
+        )
     }
 
     CosmicBackground(showStars = true) {
@@ -178,11 +212,22 @@ fun SpaceInvadersScreen(
 
             if (state.screenWidth > 0f) {
                 val invaderSizePx = state.screenWidth * 0.07f
+                // Sprites decoded at the size they're drawn (they're 500 px PNGs).
+                val invaderPx = invaderSizePx.toInt()
+                val playerPx = (state.playerWidth * 2.04f).toInt()
+                val catBitmap = remember(invaderPx) { decodeScaled(context.resources, R.drawable.sp_pong_cat, invaderPx) }
+                val dogBitmap = remember(invaderPx) { decodeScaled(context.resources, R.drawable.sp_pong_dog, invaderPx) }
+                val sockBitmap = remember(invaderPx) { decodeScaled(context.resources, R.drawable.sp_socks, invaderPx) }
+                val playerBitmap = remember(playerPx) {
+                    decodeScaled(context.resources, R.drawable.sp_invaders_alien_dad, playerPx)
+                }
 
                 // ── Game Canvas ─────────────────────────────────────────────
                 Canvas(modifier = Modifier.fillMaxSize()) {
+                    val state = liveState.value
                     // Invaders
-                    state.invaders.filter { it.alive }.forEach { inv ->
+                    state.invaders.forEach { inv ->
+                        if (!inv.alive) return@forEach
                         val bitmap = when (inv.type) {
                             InvaderType.CAT -> catBitmap
                             InvaderType.DOG -> dogBitmap
@@ -203,7 +248,8 @@ fun SpaceInvadersScreen(
                     val shieldColor = AlienPink.copy(alpha = 0.45f)
                     val shieldBlockSz = state.screenWidth * 0.022f
                     val shieldHalf = shieldBlockSz / 2f
-                    state.shields.filter { it.alive }.forEach { block ->
+                    state.shields.forEach { block ->
+                        if (!block.alive) return@forEach
                         drawRect(
                             color = shieldColor,
                             topLeft = Offset(block.x - shieldHalf, block.y - shieldHalf),
@@ -224,19 +270,7 @@ fun SpaceInvadersScreen(
 
                     // Player projectiles (pink glow rounds — fattened)
                     state.playerProjectiles.forEach { proj ->
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    SoftPink.copy(alpha = 0.6f),
-                                    SoftPink.copy(alpha = 0.1f),
-                                    Color.Transparent,
-                                ),
-                                center = Offset(proj.x, proj.y),
-                                radius = state.screenWidth * 0.035f,
-                            ),
-                            radius = state.screenWidth * 0.035f,
-                            center = Offset(proj.x, proj.y),
-                        )
+                        drawGlow(playerShotGlow, proj.x, proj.y, state.screenWidth * 0.035f)
                         drawRoundRect(
                             color = SoftPink,
                             topLeft = Offset(
@@ -252,23 +286,10 @@ fun SpaceInvadersScreen(
                     }
 
                     // Enemy projectiles (green — fattened)
-                    val enemyGreen = Color(0xFF4ADE80)
                     state.enemyProjectiles.forEach { proj ->
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    enemyGreen.copy(alpha = 0.5f),
-                                    enemyGreen.copy(alpha = 0.1f),
-                                    Color.Transparent,
-                                ),
-                                center = Offset(proj.x, proj.y),
-                                radius = state.screenWidth * 0.025f,
-                            ),
-                            radius = state.screenWidth * 0.025f,
-                            center = Offset(proj.x, proj.y),
-                        )
+                        drawGlow(enemyShotGlow, proj.x, proj.y, state.screenWidth * 0.025f)
                         drawRoundRect(
-                            color = enemyGreen,
+                            color = EnemyGreen,
                             topLeft = Offset(
                                 proj.x - state.screenWidth * 0.007f,
                                 proj.y - state.screenHeight * 0.012f,
