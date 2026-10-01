@@ -9,8 +9,8 @@ Jetpack Compose Android app (`com.quokkalabs.strangeplanet`, launcher `.MainActi
 
 ## Branches
 
-- **`master` is stale (v1.7).** The real line of development is `claude/check-strange-planet-app-sQtLb`. Branch new work from there, never from `master`.
-- `origin/claude/dreamy-curie-uifsmx` holds untested jank-fix commits built on old master — use as reference only, do not merge.
+- `master` is the main line (fast-forwarded to v3.5.x on 2026-10-01; it had been stuck at v1.7). Branch new work from `master`.
+- Old branches `claude/check-strange-planet-app-sQtLb` (v3.4.4), `claude/smooth-game-loops` (now merged) and `claude/dreamy-curie-uifsmx` (stale jank experiment on v1.7) are history — don't build on them.
 
 ## Environment (Windows 11)
 
