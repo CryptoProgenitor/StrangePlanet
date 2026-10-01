@@ -8,7 +8,8 @@
       "PowerShell(./gradlew.bat *)",
       "PowerShell(.\\\\gradlew.bat *)",
       "PowerShell(./.claude/skills/deploy/deploy.ps1 *)",
-      "PowerShell(./.claude/skills/deploy/start-emulator.ps1 *)"
+      "PowerShell(./.claude/skills/deploy/start-emulator.ps1 *)",
+      "PowerShell(./.claude/skills/deploy/jank.ps1 *)"
     ],
     "ask": [
       "Bash(adb uninstall *)",

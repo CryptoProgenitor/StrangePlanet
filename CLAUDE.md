@@ -52,10 +52,20 @@ adb -e emu kill                              # stop it
 - Launching `emulator.exe` by hand fails with "Cannot find AVD system path" unless `ANDROID_HOME`/`ANDROID_SDK_ROOT` are set to the AppData SDK for that process — the script does this.
 - Fine for launch/crash/screenshot checks; **not** for jank numbers (software GPU, `swiftshader_indirect`). Measure frame times on the real phones.
 
+## Measuring jank
+
+Debug builds are debuggable, which makes Compose much slower — never judge smoothness on one. Use the `profile` build type (release settings, signed with the local debug key, installs over the debug app and keeps its data):
+
+```powershell
+./.claude/skills/deploy/deploy.ps1 -Profile                    # or .\gradlew.bat installProfile
+./.claude/skills/deploy/jank.ps1 -Seconds 30 -Label "merge after"   # user plays meanwhile; appends to build/jank-log.txt
+```
+
 ## Gotchas
 
 - **Locked phone = solid black screenshot.** Check `adb shell dumpsys window | Select-String isKeyguardShowing`; wake with `adb shell input keyevent KEYCODE_WAKEUP`, then ask the user to unlock.
 - **PowerShell 5.1**: no `&&` (use `; if ($?) { ... }`); quote `'stash@{0}'`; never redirect binary output with `>` (`adb exec-out screencap -p > x.png` corrupts the PNG — use the Bash tool or the pull approach above).
+- **Git Bash rewrites `/sdcard/...` into a Windows path** — prefix with `MSYS_NO_PATHCONV=1` when passing device paths to adb from the Bash tool.
 - `CHANGELOG.md` stopped at 2.3.1 and is not maintained.
 
 ## Releases
@@ -86,4 +96,6 @@ Launcher titles → code:
 
 ## Performance
 
-Known jank cause: game loops written as `viewModelScope.launch { while (isActive) { delay(16); step() } }` (Pong, SpaceInvaders, Pac, Asteroid, Merge, Tetris, StrangePlanet view models). `delay` drifts against 120 Hz displays and has no frame-time scaling. Pace loops from vsync (`withFrameNanos`) with delta time instead, and avoid per-frame recomposition (draw moving things in a `Canvas` or via `graphicsLayer`/lambda offsets). Measure before/after with `dumpsys gfxinfo`.
+- Game loops run on `AndroidUiDispatcher.Main` and pace with `FrameTicker.awaitTick()` (fixed 60 ticks/s from vsync) — never `delay(16)`.
+- A game's `StateFlow` emits every tick. Read it in the Canvas **draw** lambda (`liveState.value`), and give the rest of the screen a `derivedStateOf` summary (see `MergeHud`, `TetrisHud`) so the screen doesn't recompose 60×/s.
+- Don't build gradients/paths per entity per frame: cache sprites (`OrbSprites`, `CellSprites`) or brushes. Decode bitmaps at drawn size with `rememberScaledImage`/`decodeScaled`. Sprite PNGs live in `drawable-nodpi` and must always be drawn at an explicit size.

@@ -11,6 +11,7 @@ import com.quokkalabs.strangeplanet.data.model.Pop
 import com.quokkalabs.strangeplanet.data.model.VOID_POP_MAX
 import com.quokkalabs.strangeplanet.data.model.nextOrbId
 import kotlin.math.hypot
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
@@ -201,7 +202,7 @@ class MergeEngine(
             var didMerge = false
             for (j in i + 1 until orbs.size) {
                 val b = orbs[j]
-                if (b.id in merged || b.tier != a.tier) continue
+                if (b.tier != a.tier || b.id in merged) continue
                 val ra = radiusOf(a.tier)
                 val rb = radiusOf(b.tier)
                 val d = hypot(b.x - a.x, b.y - a.y)
@@ -309,9 +310,12 @@ class MergeEngine(
             val inertia = inertiaOf(o.tier)
             var x = o.x; var y = o.y
             var vx = o.vx; var vy = o.vy; var omega = o.omega
+            val hitsSide = x - r < vesselLeft || x + r > vesselRight
+            val hitsFloor = y + r > vesselBottom
+            if (!hitsSide && !hitsFloor) continue
 
             // Side walls — bounce + a little wall friction → spin.
-            if (x - r < vesselLeft || x + r > vesselRight) {
+            if (hitsSide) {
                 x = if (x - r < vesselLeft) vesselLeft + r else vesselRight - r
                 val impactN = m * kotlin.math.abs(vx)
                 vx = -vx * wallDamp
@@ -328,7 +332,7 @@ class MergeEngine(
             }
 
             // Floor — bounce + Coulomb friction that converts slip to roll.
-            if (y + r > vesselBottom) {
+            if (hitsFloor) {
                 val impactN = m * kotlin.math.abs(vy)
                 y = vesselBottom - r
                 vy = -vy * wallDamp
@@ -357,9 +361,12 @@ class MergeEngine(
                 val rb = radiusOf(b.tier)
                 val dx = b.x - a.x
                 val dy = b.y - a.y
-                var dist = hypot(dx, dy)
                 val minDist = ra + rb
-                if (dist < minDist && dist > 0.0001f) {
+                // Most pairs are far apart: reject them before paying for the sqrt.
+                val distSq = dx * dx + dy * dy
+                if (distSq >= minDist * minDist) continue
+                val dist = sqrt(distSq)
+                if (dist > 0.0001f) {
                     val nx = dx / dist
                     val ny = dy / dist
                     val overlap = (minDist - dist) / 2f

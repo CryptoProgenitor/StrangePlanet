@@ -16,6 +16,9 @@ Options (combine freely):
 - `-NoBuild` — skip Gradle and reinstall the last built APK.
 - `-Screenshot` — save a screenshot per device to `build\screenshots\<serial>.png`, then view it with the Read tool.
 - `-WaitSeconds 10` — wait longer before checking for crashes (default 5).
+- `-Profile` — release-speed build (non-debuggable). Use this whenever smoothness matters; debug builds jank on their own.
+
+To measure jank while the user plays: `./.claude/skills/deploy/jank.ps1 -Seconds 30 -Label "<game> <before|after>"` — prints janky-frame % and frame-time percentiles per phone and appends to `build/jank-log.txt`.
 
 The script builds with `gradlew.bat assembleDebug`, installs on every device in `adb devices`, wakes the screen, force-restarts the app, then checks each device's crash buffer, the low-memory killer, and that the process is alive. It exits 1 on any build, install, or launch failure.
 

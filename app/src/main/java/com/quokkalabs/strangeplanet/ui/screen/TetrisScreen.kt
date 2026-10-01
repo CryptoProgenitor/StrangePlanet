@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -38,7 +39,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Canvas as GraphicsCanvas
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -47,11 +51,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.quokkalabs.strangeplanet.data.model.TetrisPhase
+import com.quokkalabs.strangeplanet.data.model.TetrisState
 import com.quokkalabs.strangeplanet.data.model.TetroType
 import com.quokkalabs.strangeplanet.domain.TetrisEngine
 import com.quokkalabs.strangeplanet.ui.theme.AlienPink
 import com.quokkalabs.strangeplanet.ui.viewmodel.TetrisViewModel
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.min
 
 // ── Tetromino colours ─────────────────────────────────────────────────────────
@@ -84,6 +90,42 @@ private fun DrawScope.drawCell(color: Color, x: Float, y: Float, sz: Float, alph
         cornerRadius = CornerRadius(sz * 0.18f, sz * 0.18f),
     )
 }
+
+/**
+ * Each block colour rendered once per cell size, so the ~200 blocks of a full well
+ * are bitmap draws instead of ~200 new gradient shaders every frame.
+ */
+private class CellSprites {
+    private val images = HashMap<TetroType, ImageBitmap>()
+    private var cellSize = 0f
+
+    fun DrawScope.drawCellSprite(type: TetroType, x: Float, y: Float, sz: Float) {
+        if (sz != cellSize) {
+            images.clear()
+            cellSize = sz
+        }
+        val image = images.getOrPut(type) {
+            val px = ceil(sz).toInt().coerceAtLeast(1)
+            ImageBitmap(px, px).also { img ->
+                CanvasDrawScope().draw(this, layoutDirection, GraphicsCanvas(img), Size(px.toFloat(), px.toFloat())) {
+                    drawCell(type.toColor(), 0f, 0f, sz)
+                }
+            }
+        }
+        drawImage(image, Offset(x, y))
+    }
+}
+
+/** The part of [TetrisState] shown outside the well; changes only on game events. */
+private data class TetrisHud(
+    val score: Int,
+    val highScore: Int,
+    val level: Int,
+    val lines: Int,
+    val phase: TetrisPhase,
+    val next: TetroType,
+    val clearingRows: List<Int>,
+)
 
 @Composable
 private fun Stat(label: String, value: String) {
@@ -124,7 +166,17 @@ private fun OverlayLink(text: String, onClick: () -> Unit) {
 
 @Composable
 fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
-    val state by viewModel.state.collectAsState()
+    // The engine emits a new state every tick (gravity/hold counters), but the well is
+    // only read while drawing; the rest of the screen reads this summary so it
+    // recomposes on game events rather than 60 times a second.
+    val liveState = viewModel.state.collectAsState()
+    val state by remember {
+        derivedStateOf {
+            val s = liveState.value
+            TetrisHud(s.score, s.highScore, s.level, s.lines, s.phase, s.next, s.clearingRows)
+        }
+    }
+    val cellSprites = remember { CellSprites() }
     val density = LocalDensity.current
     val engine = remember { TetrisEngine() }
 
@@ -271,6 +323,7 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                             }
                         },
                 ) {
+                    val state = liveState.value
                     // Starfield
                     val rng = java.util.Random(54321L)
                     repeat(25) {
@@ -303,7 +356,9 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                     for (r in 0 until TetrisEngine.ROWS) {
                         for (c in 0 until TetrisEngine.COLS) {
                             val type = state.grid[r][c] ?: continue
-                            drawCell(type.toColor(), gridLeft + c * cellSz, gridTop + r * cellSz, cellSz)
+                            with(cellSprites) {
+                                drawCellSprite(type, gridLeft + c * cellSz, gridTop + r * cellSz, cellSz)
+                            }
                         }
                     }
 
@@ -338,8 +393,9 @@ fun TetrisScreen(viewModel: TetrisViewModel, onBack: () -> Unit) {
                         }
                         engine.cells(active).forEach { (r, c) ->
                             if (r in 0 until TetrisEngine.ROWS) {
-                                drawCell(active.type.toColor(),
-                                    gridLeft + c * cellSz, gridTop + r * cellSz, cellSz)
+                                with(cellSprites) {
+                                    drawCellSprite(active.type, gridLeft + c * cellSz, gridTop + r * cellSz, cellSz)
+                                }
                             }
                         }
                     }

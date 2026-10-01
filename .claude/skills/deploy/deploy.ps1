@@ -4,17 +4,20 @@
 #   ./.claude/skills/deploy/deploy.ps1                # build + install + launch
 #   ./.claude/skills/deploy/deploy.ps1 -NoBuild       # reuse the last APK
 #   ./.claude/skills/deploy/deploy.ps1 -Screenshot    # also save build/screenshots/<serial>.png
+#   ./.claude/skills/deploy/deploy.ps1 -Profile       # release-speed build (use for jank testing)
 #
 # Exit code 0 = every device launched cleanly, 1 = build/install failed or a crash was seen.
 param(
     [switch]$NoBuild,
     [switch]$Screenshot,
+    [switch]$Profile,
     [int]$WaitSeconds = 5
 )
 
 $pkg = 'com.quokkalabs.strangeplanet'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$apk = Join-Path $root 'app\build\outputs\apk\debug\app-debug.apk'
+$variant = if ($Profile) { 'profile' } else { 'debug' }
+$apk = Join-Path $root "app\build\outputs\apk\$variant\app-$variant.apk"
 
 function Get-Devices {
     $lines = adb devices | Select-Object -Skip 1 | Where-Object { $_.Trim() }
@@ -35,8 +38,9 @@ if ($devices.Count -eq 0) {
 }
 
 if (-not $NoBuild) {
-    Write-Host '== Building debug APK'
-    & (Join-Path $root 'gradlew.bat') -p $root assembleDebug --console=plain -q
+    Write-Host "== Building $variant APK"
+    $task = if ($Profile) { 'assembleProfile' } else { 'assembleDebug' }
+    & (Join-Path $root 'gradlew.bat') -p $root $task --console=plain -q
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'FAIL: Gradle build failed (see errors above).'
         exit 1
@@ -103,7 +107,7 @@ foreach ($r in $results) {
 
 $version = (Select-String -Path (Join-Path $root 'app\build.gradle.kts') -Pattern 'versionName = "(.+)"').Matches[0].Groups[1].Value
 Write-Host ''
-Write-Host "== Deploy summary (v$version)"
+Write-Host "== Deploy summary (v$version, $variant build)"
 foreach ($r in $results) {
     Write-Host "$($r.Device): $($r.Status)"
     if ($r.Detail) { Write-Host $r.Detail }

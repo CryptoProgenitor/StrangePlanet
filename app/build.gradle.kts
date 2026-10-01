@@ -30,6 +30,14 @@ android {
                 "proguard-rules.pro"
             )
         }
+        // Release-speed build signed with the local debug key, so it installs over the
+        // debug app (keeping high scores). Debug builds are debuggable, which makes
+        // Compose much slower — measure jank on this one: .\gradlew.bat installProfile
+        create("profile") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

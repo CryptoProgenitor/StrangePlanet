@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,12 +50,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Canvas as GraphicsCanvas
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -74,11 +81,14 @@ import com.quokkalabs.strangeplanet.data.model.MatchResult
 import com.quokkalabs.strangeplanet.data.model.MergeMode
 import com.quokkalabs.strangeplanet.data.model.MergePhase
 import com.quokkalabs.strangeplanet.data.model.MergeTier
+import com.quokkalabs.strangeplanet.data.model.MergeState
 import com.quokkalabs.strangeplanet.data.model.Orb
 import com.quokkalabs.strangeplanet.data.model.POP_MAX
 import com.quokkalabs.strangeplanet.data.model.Pop
 import com.quokkalabs.strangeplanet.data.model.VOID_POP_MAX
 import kotlin.math.cos
+import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.sin
 import com.quokkalabs.strangeplanet.ui.components.CosmicBackground
 import com.quokkalabs.strangeplanet.ui.components.ExitChoiceDialog
@@ -93,7 +103,12 @@ fun MergeScreen(
     viewModel: MergeViewModel,
     onBack: () -> Unit,
 ) {
-    val state by viewModel.state.collectAsState()
+    // The board changes every physics tick, but only the Canvas needs it and it reads
+    // it while drawing. Everything else reads this summary, so the screen recomposes
+    // when the score, queue or phase changes rather than 60 times a second.
+    val liveState = viewModel.state.collectAsState()
+    val state by remember { derivedStateOf { MergeHud.of(liveState.value) } }
+    val orbSprites = remember { OrbSprites() }
     val canUndo by viewModel.canUndo.collectAsState()
     val undoPenalty by viewModel.undoPenalty.collectAsState()
     val btState by viewModel.btState.collectAsState()
@@ -138,9 +153,8 @@ fun MergeScreen(
     var showSweepConfirm by remember { mutableStateOf(false) }
     var showForfeitConfirm by remember { mutableStateOf(false) }
 
-    val sweepCost = MergeViewModel.sweepCost(state.orbs)
-    val canSweep = state.orbs.any { it.tier in MergeViewModel.SWEEPABLE } &&
-        state.score >= sweepCost
+    val sweepCost = state.sweepCost
+    val canSweep = state.canSweep
 
     fun attemptBack() {
         when {
@@ -199,6 +213,8 @@ fun MergeScreen(
                     },
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
+                    // Read here, in the draw phase: a physics tick only redraws the board.
+                    val state = liveState.value
                     drawVessel(state.vesselLeft, state.vesselRight, state.vesselTop, state.vesselBottom)
 
                     // Aim guide + hovering current orb at the spout
@@ -217,26 +233,31 @@ fun MergeScreen(
                             )
                             gy += dashGap
                         }
-                        drawOrb(
-                            Orb(-1L, state.currentTier, gx, state.vesselTop - r - 4f),
-                            r,
-                            alphaMul = 0.85f,
-                        )
+                        with(orbSprites) {
+                            drawOrb(
+                                Orb(-1L, state.currentTier, gx, state.vesselTop - r - 4f),
+                                r,
+                                alphaMul = 0.85f,
+                            )
+                        }
                     }
 
                     // Settled / falling orbs
-                    state.orbs.forEach { o ->
-                        val r = o.tier.radiusFrac * (state.vesselRight - state.vesselLeft)
-                        drawOrb(o, r)
+                    with(orbSprites) {
+                        state.orbs.forEach { o ->
+                            val r = o.tier.radiusFrac * (state.vesselRight - state.vesselLeft)
+                            drawOrb(o, r)
+                        }
                     }
 
                     // Orbs spiralling into a forming void
                     state.consuming.forEach {
-                        drawConsuming(it, state.vesselRight - state.vesselLeft)
+                        drawConsuming(it, state.vesselRight - state.vesselLeft, orbSprites)
                     }
 
                     // Merge bursts (drawn on top of everything)
                     state.pops.forEach { drawPop(it) }
+                    orbSprites.endFrame()
                 }
 
                 // ── HUD pill ────────────────────────────────────────────────
@@ -480,6 +501,36 @@ fun MergeScreen(
     }
 }
 
+/** The slow-changing part of [MergeState] that the HUD and overlays show. */
+private data class MergeHud(
+    val score: Int,
+    val highScore: Int,
+    val phase: MergePhase,
+    val nextTier: MergeTier,
+    val upcoming: List<MergeTier>,
+    val lastMergeName: String?,
+    val voidFlash: Boolean,
+    val sweepCost: Int,
+    val canSweep: Boolean,
+) {
+    companion object {
+        fun of(s: MergeState): MergeHud {
+            val cost = MergeViewModel.sweepCost(s.orbs)
+            return MergeHud(
+                score = s.score,
+                highScore = s.highScore,
+                phase = s.phase,
+                nextTier = s.nextTier,
+                upcoming = s.upcoming.take(2),
+                lastMergeName = s.lastMergeName,
+                voidFlash = s.voidFlash,
+                sweepCost = cost,
+                canSweep = s.orbs.any { it.tier in MergeViewModel.SWEEPABLE } && s.score >= cost,
+            )
+        }
+    }
+}
+
 // ─── Drawing ─────────────────────────────────────────────────────────────────
 
 private fun DrawScope.drawVessel(left: Float, right: Float, top: Float, bottom: Float) {
@@ -503,17 +554,34 @@ private fun DrawScope.drawVessel(left: Float, right: Float, top: Float, bottom: 
     }
 }
 
+/** Outer glow strength for luminous tiers (0 = none). */
+private fun glowStrength(tier: MergeTier): Float = when (tier) {
+    MergeTier.STAR -> 0.45f
+    MergeTier.NEUTRON_STAR -> 0.6f
+    MergeTier.BLACK_HOLE -> 0.7f
+    else -> 0f
+}
+
+/** Accretion ring + void core. */
+private fun DrawScope.drawVoidCore(center: Offset, r: Float, alphaMul: Float) {
+    drawCircle(
+        color = Color(0xFFE8B4C8).copy(alpha = 0.7f * alphaMul),
+        radius = r,
+        center = center,
+        style = Stroke(width = r * 0.22f),
+    )
+    drawCircle(Color(0xFF0A0A12).copy(alpha = alphaMul), r * 0.86f, center)
+}
+
+/**
+ * Draws an orb directly with vector ops. Used for the small HUD previews; the board
+ * uses [OrbSprites], which caches the same layers as bitmaps.
+ */
 private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
     val base = tierColor(o.tier)
     val center = Offset(o.x, o.y)
 
-    // Outer glow for luminous tiers
-    val glow = when (o.tier) {
-        MergeTier.STAR -> 0.45f
-        MergeTier.NEUTRON_STAR -> 0.6f
-        MergeTier.BLACK_HOLE -> 0.7f
-        else -> 0f
-    }
+    val glow = glowStrength(o.tier)
     if (glow > 0f) {
         drawCircle(
             brush = Brush.radialGradient(
@@ -531,31 +599,11 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
     }
 
     if (o.tier == MergeTier.BLACK_HOLE) {
-        // Accretion ring + void core
-        drawCircle(
-            color = Color(0xFFE8B4C8).copy(alpha = 0.7f * alphaMul),
-            radius = r,
-            center = center,
-            style = Stroke(width = r * 0.22f),
-        )
-        drawCircle(Color(0xFF0A0A12).copy(alpha = alphaMul), r * 0.86f, center)
+        drawVoidCore(center, r, alphaMul)
         return
     }
 
-    // Body with a top-left highlight
-    drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                lighten(base).copy(alpha = alphaMul),
-                base.copy(alpha = alphaMul),
-                darken(base).copy(alpha = alphaMul),
-            ),
-            center = Offset(o.x - r * 0.35f, o.y - r * 0.35f),
-            radius = r * 1.5f,
-        ),
-        radius = r,
-        center = center,
-    )
+    drawOrbBody(base, center, r, alphaMul)
 
     // Tier-specific surface detail, clipped to the orb so nothing spills.
     val orbPath = Path().apply {
@@ -567,23 +615,49 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
             degrees = Math.toDegrees(o.angle.toDouble()).toFloat(),
             pivot = center,
         ) {
-            when (o.tier) {
-                MergeTier.DUST_MOTE, MergeTier.PEBBLE, MergeTier.BOULDER,
-                MergeTier.MOONLET, MergeTier.MOON -> drawCraters(o, r, base, alphaMul)
-                MergeTier.STRANGE_PLANET -> drawEarth(o, r, alphaMul)
-                MergeTier.GAS_GIANT -> drawGasGiant(o, r, base, alphaMul)
-                MergeTier.STAR -> drawStarSurface(o, r, alphaMul)
-                MergeTier.NEUTRON_STAR -> drawNeutronCore(o, r, alphaMul)
-                else -> {}
-            }
+            drawOrbSurface(o, r, base, alphaMul)
         }
     }
 
-    // Terminator shadow (light comes from the top-left)
+    drawOrbLighting(base, center, r, alphaMul)
+}
+
+/** Body with a top-left highlight. */
+private fun DrawScope.drawOrbBody(base: Color, center: Offset, r: Float, alphaMul: Float) {
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                lighten(base).copy(alpha = alphaMul),
+                base.copy(alpha = alphaMul),
+                darken(base).copy(alpha = alphaMul),
+            ),
+            center = Offset(center.x - r * 0.35f, center.y - r * 0.35f),
+            radius = r * 1.5f,
+        ),
+        radius = r,
+        center = center,
+    )
+}
+
+/** Tier-specific surface detail, unclipped and unrotated, centred on the orb. */
+private fun DrawScope.drawOrbSurface(o: Orb, r: Float, base: Color, alphaMul: Float) {
+    when (o.tier) {
+        MergeTier.DUST_MOTE, MergeTier.PEBBLE, MergeTier.BOULDER,
+        MergeTier.MOONLET, MergeTier.MOON -> drawCraters(o, r, base, alphaMul)
+        MergeTier.STRANGE_PLANET -> drawEarth(o, r, alphaMul)
+        MergeTier.GAS_GIANT -> drawGasGiant(o, r, base, alphaMul)
+        MergeTier.STAR -> drawStarSurface(o, r, alphaMul)
+        MergeTier.NEUTRON_STAR -> drawNeutronCore(o, r, alphaMul)
+        else -> {}
+    }
+}
+
+/** Terminator shadow, specular highlight and rim (light comes from the top-left). */
+private fun DrawScope.drawOrbLighting(base: Color, center: Offset, r: Float, alphaMul: Float) {
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(Color.Transparent, Color.Transparent, darken(base).copy(alpha = 0.5f * alphaMul)),
-            center = Offset(o.x - r * 0.3f, o.y - r * 0.3f),
+            center = Offset(center.x - r * 0.3f, center.y - r * 0.3f),
             radius = r * 1.35f,
         ),
         radius = r,
@@ -594,7 +668,7 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
     drawCircle(
         color = Color.White.copy(alpha = 0.22f * alphaMul),
         radius = r * 0.22f,
-        center = Offset(o.x - r * 0.38f, o.y - r * 0.38f),
+        center = Offset(center.x - r * 0.38f, center.y - r * 0.38f),
     )
 
     // Rim
@@ -604,6 +678,117 @@ private fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f) {
         center = center,
         style = Stroke(width = r * 0.06f),
     )
+}
+
+/**
+ * Board orbs, pre-rendered. Drawing an orb with vector ops costs ~20 draw calls, three
+ * new gradient shaders and a path clip, every orb, every frame — the main cost of a full
+ * vessel. Here each layer is rendered once into a bitmap and the orb becomes three
+ * bitmap draws: body shading and lighting depend only on tier and size, and the surface
+ * (craters, continents…) depends on the orb's id and is rotated as the orb rolls.
+ */
+private class OrbSprites {
+    private class Sprite(val image: ImageBitmap, val radius: Float) {
+        var lastFrame = 0L
+    }
+
+    private val bodies = HashMap<Int, Sprite>()
+    private val lights = HashMap<Int, Sprite>()
+    private val surfaces = HashMap<Long, Sprite>()
+    private val glows = HashMap<Int, Brush>()
+    private var frame = 0L
+
+    /**
+     * Draws [o] at radius [r]. [spriteR] is the resolution to cache at: the orb's
+     * resting size, so shrinking orbs (spiralling into a void) reuse it scaled down.
+     */
+    fun DrawScope.drawOrb(o: Orb, r: Float, alphaMul: Float = 1f, spriteR: Float = r) {
+        val base = tierColor(o.tier)
+        val glow = glowStrength(o.tier)
+        if (glow > 0f) {
+            val brush = glows.getOrPut(o.tier.ordinal) {
+                Brush.radialGradient(
+                    colors = listOf(base.copy(alpha = glow), base.copy(alpha = 0.08f), Color.Transparent),
+                    center = Offset.Zero,
+                    radius = UNIT,
+                )
+            }
+            translate(o.x, o.y) {
+                scale(r * 2.1f / UNIT, pivot = Offset.Zero) {
+                    drawCircle(brush, UNIT, Offset.Zero, alpha = alphaMul)
+                }
+            }
+        }
+
+        if (o.tier == MergeTier.BLACK_HOLE) {
+            drawVoidCore(Offset(o.x, o.y), r, alphaMul)
+            return
+        }
+
+        val body = sprite(bodies, o.tier.ordinal, spriteR) { c, sr ->
+            drawOrbBody(base, c, sr, 1f)
+        }
+        val surface = sprite(surfaces, (o.id shl 5) or o.tier.ordinal.toLong(), spriteR) { c, sr ->
+            drawOrbSurface(o.copy(x = c.x, y = c.y), sr, base, 1f)
+            // Clip to the disc with an antialiased edge: DstIn keeps only what's inside.
+            drawRect(
+                brush = Brush.radialGradient(
+                    (sr - 0.5f) / (sr + 1f) to Color.Black,
+                    (sr + 0.5f) / (sr + 1f) to Color.Transparent,
+                    center = c,
+                    radius = sr + 1f,
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+        val light = sprite(lights, o.tier.ordinal, spriteR) { c, sr ->
+            drawOrbLighting(base, c, sr, 1f)
+        }
+
+        val half = body.image.width / 2f
+        val topLeft = Offset(-half, -half)
+        translate(o.x, o.y) {
+            scale(r / spriteR, pivot = Offset.Zero) {
+                drawImage(body.image, topLeft, alpha = alphaMul)
+                rotate(Math.toDegrees(o.angle.toDouble()).toFloat(), pivot = Offset.Zero) {
+                    drawImage(surface.image, topLeft, alpha = alphaMul)
+                }
+                drawImage(light.image, topLeft, alpha = alphaMul)
+            }
+        }
+    }
+
+    /** Call once per board frame; drops surfaces of orbs that have merged away. */
+    fun endFrame() {
+        frame++
+        if (surfaces.size > 48) surfaces.values.removeAll { it.lastFrame < frame - 2 }
+    }
+
+    private inline fun <K> DrawScope.sprite(
+        cache: HashMap<K, Sprite>,
+        key: K,
+        radius: Float,
+        crossinline render: DrawScope.(center: Offset, radius: Float) -> Unit,
+    ): Sprite {
+        val cached = cache[key]
+        val sprite = if (cached != null && abs(cached.radius - radius) < 0.5f) {
+            cached
+        } else {
+            // Room for the rim stroke, which straddles the edge.
+            val size = ceil(2f * (radius * 1.05f + 2f)).toInt()
+            val image = ImageBitmap(size, size)
+            CanvasDrawScope().draw(this, layoutDirection, GraphicsCanvas(image), Size(size.toFloat(), size.toFloat())) {
+                render(Offset(size / 2f, size / 2f), radius)
+            }
+            Sprite(image, radius).also { cache[key] = it }
+        }
+        sprite.lastFrame = frame
+        return sprite
+    }
+
+    private companion object {
+        const val UNIT = 100f
+    }
 }
 
 /** Deterministic 0..1 hash so an orb's surface stays stable across frames. */
@@ -756,7 +941,7 @@ private fun DrawScope.drawNeutronCore(o: Orb, r: Float, a: Float) {
     drawCircle(Color(0xFFCBE9FF).copy(alpha = 0.55f * a), r * 0.70f, Offset(o.x, o.y))
 }
 
-private fun DrawScope.drawConsuming(c: ConsumingOrb, vesselWidth: Float) {
+private fun DrawScope.drawConsuming(c: ConsumingOrb, vesselWidth: Float, sprites: OrbSprites) {
     val t = (c.age / CONSUME_MAX.toFloat()).coerceIn(0f, 1f)
     // Accelerate inward (ease-in) and spiral around the void centre.
     val pull = t * t
@@ -767,7 +952,7 @@ private fun DrawScope.drawConsuming(c: ConsumingOrb, vesselWidth: Float) {
     val y = c.startY + (c.cy - c.startY) * pull + sin(ang) * swirl
     val r = baseR * (1f - pull)
     if (r < 0.5f) return
-    drawOrb(Orb(-2L, c.tier, x, y), r, alphaMul = (1f - t * 0.4f))
+    with(sprites) { drawOrb(Orb(-2L, c.tier, x, y), r, alphaMul = (1f - t * 0.4f), spriteR = baseR) }
 }
 
 private fun DrawScope.drawPop(p: Pop) {

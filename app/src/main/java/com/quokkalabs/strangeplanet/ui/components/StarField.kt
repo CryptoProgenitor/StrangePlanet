@@ -9,17 +9,23 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.quokkalabs.strangeplanet.R
 import kotlin.math.PI
+import kotlin.math.roundToInt
 import kotlin.math.sin
+
+private const val AURA_UNIT = 100f
 
 private val starFractions = listOf(
     Offset(0.08f, 0.12f),
@@ -49,7 +55,17 @@ private val auraColors = listOf(
 @Composable
 fun StarField() {
     val infiniteTransition = rememberInfiniteTransition(label = "stars")
-    val starPainter = painterResource(id = R.drawable.sp_star)
+    val density = LocalDensity.current
+    // Largest drawn size is 48dp * 1.2; decode the star at that size, not 500 px.
+    val starImage = rememberScaledImage(
+        R.drawable.sp_star,
+        with(density) { (48.dp * 1.2f).roundToPx() },
+    )
+    // One gradient, built at a fixed radius and scaled per star, instead of a new
+    // gradient + shader for every star on every frame.
+    val auraBrush = remember {
+        Brush.radialGradient(colors = auraColors, center = Offset.Zero, radius = AURA_UNIT)
+    }
 
     // Read as State and only inside the draw lambda, so twinkling just redraws
     // the canvas instead of recomposing and re-laying-out every star each frame.
@@ -81,25 +97,25 @@ fun StarField() {
 
             // Aura: top-left anchored at (offset - 30dp), growing with auraScale
             val auraRadius = auraBase * auraScale / 2f
-            val auraCenter = Offset(ox - inset + auraRadius, oy - inset + auraRadius)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = auraColors,
-                    center = auraCenter,
-                    radius = auraRadius,
-                ),
-                radius = auraRadius,
-                center = auraCenter,
-                alpha = auraAlpha,
-            )
-
-            // Star sprite: top-left anchored at offset
-            val starSize = starBase * starScale
-            translate(left = ox, top = oy) {
-                with(starPainter) {
-                    draw(size = Size(starSize, starSize), alpha = 0.95f)
+            translate(left = ox - inset + auraRadius, top = oy - inset + auraRadius) {
+                scale(auraRadius / AURA_UNIT, pivot = Offset.Zero) {
+                    drawCircle(
+                        brush = auraBrush,
+                        radius = AURA_UNIT,
+                        center = Offset.Zero,
+                        alpha = auraAlpha,
+                    )
                 }
             }
+
+            // Star sprite: top-left anchored at offset
+            val starSize = (starBase * starScale).roundToInt()
+            drawImage(
+                image = starImage,
+                dstOffset = IntOffset(ox.roundToInt(), oy.roundToInt()),
+                dstSize = IntSize(starSize, starSize),
+                alpha = 0.95f,
+            )
         }
     }
 }
