@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
@@ -47,6 +48,15 @@ fun InteractiveScreen(
 
             LaunchedEffect(screenWidth, screenHeight) {
                 viewModel.initCreatures(screenWidth, screenHeight)
+                // Step physics once per display frame (vsync-aligned), using the real
+                // frame time so speed is the same at 60/90/120 Hz.
+                var lastFrameNanos = withFrameNanos { it }
+                while (true) {
+                    withFrameNanos { frameNanos ->
+                        viewModel.onFrame((frameNanos - lastFrameNanos) / 1_000_000_000f)
+                        lastFrameNanos = frameNanos
+                    }
+                }
             }
 
             if (state.showCreatures.app) {

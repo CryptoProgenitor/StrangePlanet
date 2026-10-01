@@ -2,6 +2,7 @@ package com.quokkalabs.strangeplanet.ui.viewmodel
 
 import android.app.Application
 import android.util.Log
+import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.audio.SpaceInvadersSoundManager
@@ -70,9 +71,10 @@ class SpaceInvadersViewModel(application: Application) : AndroidViewModel(applic
 
     private fun startLoop() {
         if (loopJob?.isActive == true) return
-        loopJob = viewModelScope.launch {
+        loopJob = viewModelScope.launch(AndroidUiDispatcher.Main) {
+            val ticker = FrameTicker()
             while (isActive) {
-                delay(16)
+                ticker.awaitTick()
                 val e = engine ?: continue
                 if (paused) continue
                 try {

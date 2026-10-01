@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class UiState(
@@ -104,32 +103,37 @@ class StrangePlanetViewModel(application: Application) : AndroidViewModel(applic
         physicsEngine = PhysicsEngine(screenWidth, screenHeight)
         syncEngineParams(_uiState.value.physics)
         _uiState.update { it.copy(creatures = CreatureDefaults.create(screenWidth, screenHeight)) }
+    }
 
-        viewModelScope.launch {
-            while (isActive) {
-                delay(16)
-                val engine = physicsEngine ?: continue
-                _uiState.update { state ->
-                    val glowBoost = if (engine.isOrbiting) {
-                        val p = engine.orbitProgress
-                        if (p < 0.1f) p / 0.1f * 0.5f
-                        else if (p < 0.85f) 0.35f
-                        else (1f - p) / 0.15f * 0.35f
-                    } else 0f
+    /**
+     * Advances the simulation by one display frame. Called from the screen once per
+     * vsync, so motion stays smooth at 60/90/120 Hz and slows nothing down when a
+     * frame runs late.
+     */
+    fun onFrame(frameDeltaSeconds: Float) {
+        val engine = physicsEngine ?: return
+        // Physics constants are tuned per 60 fps tick; clamp so a long stall
+        // (app resumed, GC pause) can't teleport creatures through walls.
+        val step = (frameDeltaSeconds * 60f).coerceIn(0f, MAX_STEP)
+        _uiState.update { state ->
+            val glowBoost = if (engine.isOrbiting) {
+                val p = engine.orbitProgress
+                if (p < 0.1f) p / 0.1f * 0.5f
+                else if (p < 0.85f) 0.35f
+                else (1f - p) / 0.15f * 0.35f
+            } else 0f
 
-                    val updatedCreatures = engine.update(state.creatures)
-                    val behind = if (engine.isOrbiting) {
-                        updatedCreatures.filter { engine.isCreatureBehindPlanet(it) }
-                            .map { it.type }.toSet()
-                    } else emptySet()
+            val updatedCreatures = engine.update(state.creatures, step)
+            val behind = if (engine.isOrbiting) {
+                updatedCreatures.filter { engine.isCreatureBehindPlanet(it) }
+                    .map { it.type }.toSet()
+            } else emptySet()
 
-                    state.copy(
-                        creatures = updatedCreatures,
-                        planetGlowBoost = glowBoost,
-                        creaturesBehindPlanet = behind,
-                    )
-                }
-            }
+            state.copy(
+                creatures = updatedCreatures,
+                planetGlowBoost = glowBoost,
+                creaturesBehindPlanet = behind,
+            )
         }
     }
 
@@ -181,6 +185,8 @@ class StrangePlanetViewModel(application: Application) : AndroidViewModel(applic
     }
 
     companion object {
+        private const val MAX_STEP = 3f
+
         private val terrifiedSocksSayings = listOf(
             "NO! THE DEBRIS CONSUMER APPROACHES!",
             "MY FIBRES ARE NOT DEBRIS! I AM A GARMENT!",

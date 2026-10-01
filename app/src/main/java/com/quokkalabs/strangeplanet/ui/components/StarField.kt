@@ -6,35 +6,54 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.quokkalabs.strangeplanet.R
 import kotlin.math.PI
 import kotlin.math.sin
 
+private val starFractions = listOf(
+    Offset(0.08f, 0.12f),
+    Offset(0.88f, 0.08f),
+    Offset(0.45f, 0.18f),
+    Offset(0.58f, 0.32f),
+    Offset(0.05f, 0.25f),
+    Offset(0.78f, 0.15f),
+    Offset(0.30f, 0.05f),
+    Offset(0.92f, 0.40f),
+    Offset(0.15f, 0.55f),
+    Offset(0.70f, 0.48f),
+    // Bottom-band stars (visible below the maze)
+    Offset(0.12f, 0.78f),
+    Offset(0.55f, 0.83f),
+    Offset(0.82f, 0.75f),
+    Offset(0.35f, 0.90f),
+    Offset(0.68f, 0.93f),
+)
+
+private val auraColors = listOf(
+    Color.White.copy(alpha = 0.9f),
+    Color.White.copy(alpha = 0.4f),
+    Color.Transparent,
+)
+
 @Composable
 fun StarField() {
     val infiniteTransition = rememberInfiniteTransition(label = "stars")
-    val density = LocalDensity.current
+    val starPainter = painterResource(id = R.drawable.sp_star)
 
-    val twinkle by infiniteTransition.animateFloat(
+    // Read as State and only inside the draw lambda, so twinkling just redraws
+    // the canvas instead of recomposing and re-laying-out every star each frame.
+    val twinkle = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -44,69 +63,43 @@ fun StarField() {
         label = "twinkle",
     )
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val w = constraints.maxWidth.toFloat()
-        val h = constraints.maxHeight.toFloat()
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val t = twinkle.value
+        val inset = 30.dp.toPx()
+        val auraBase = 60.dp.toPx()
+        val starBase = 48.dp.toPx()
 
-        val positions = remember(w, h) {
-            listOf(
-                Offset(w * 0.08f, h * 0.12f),
-                Offset(w * 0.88f, h * 0.08f),
-                Offset(w * 0.45f, h * 0.18f),
-                Offset(w * 0.58f, h * 0.32f),
-                Offset(w * 0.05f, h * 0.25f),
-                Offset(w * 0.78f, h * 0.15f),
-                Offset(w * 0.30f, h * 0.05f),
-                Offset(w * 0.92f, h * 0.40f),
-                Offset(w * 0.15f, h * 0.55f),
-                Offset(w * 0.70f, h * 0.48f),
-                // Bottom-band stars (visible below the maze)
-                Offset(w * 0.12f, h * 0.78f),
-                Offset(w * 0.55f, h * 0.83f),
-                Offset(w * 0.82f, h * 0.75f),
-                Offset(w * 0.35f, h * 0.90f),
-                Offset(w * 0.68f, h * 0.93f),
-            )
-        }
+        starFractions.forEachIndexed { index, fraction ->
+            val ox = fraction.x * size.width
+            val oy = fraction.y * size.height
 
-        positions.forEachIndexed { index, offset ->
-            val phase = (twinkle + index * 0.1f) % 1f
+            val phase = (t + index * 0.1f) % 1f
             val pulse = (sin(phase * 2f * PI.toFloat()) + 1f) / 2f * 0.7f + 0.3f
             val starScale = 0.8f + pulse * 0.4f
             val auraScale = 1.2f + pulse * 0.6f
             val auraAlpha = 0.5f + pulse * 0.4f
 
-            Box(
-                modifier = Modifier
-                    .offset(
-                        x = with(density) { (offset.x - 30.dp.toPx()).toDp() },
-                        y = with(density) { (offset.y - 30.dp.toPx()).toDp() },
-                    )
-                    .size((60 * auraScale).dp)
-                    .alpha(auraAlpha)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.9f),
-                                Color.White.copy(alpha = 0.4f),
-                                Color.Transparent,
-                            ),
-                        ),
-                        shape = CircleShape,
-                    ),
+            // Aura: top-left anchored at (offset - 30dp), growing with auraScale
+            val auraRadius = auraBase * auraScale / 2f
+            val auraCenter = Offset(ox - inset + auraRadius, oy - inset + auraRadius)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = auraColors,
+                    center = auraCenter,
+                    radius = auraRadius,
+                ),
+                radius = auraRadius,
+                center = auraCenter,
+                alpha = auraAlpha,
             )
 
-            Image(
-                painter = painterResource(id = R.drawable.sp_star),
-                contentDescription = null,
-                modifier = Modifier
-                    .offset(
-                        x = with(density) { offset.x.toDp() },
-                        y = with(density) { offset.y.toDp() },
-                    )
-                    .size((48 * starScale).dp)
-                    .alpha(0.95f),
-            )
+            // Star sprite: top-left anchored at offset
+            val starSize = starBase * starScale
+            translate(left = ox, top = oy) {
+                with(starPainter) {
+                    draw(size = Size(starSize, starSize), alpha = 0.95f)
+                }
+            }
         }
     }
 }

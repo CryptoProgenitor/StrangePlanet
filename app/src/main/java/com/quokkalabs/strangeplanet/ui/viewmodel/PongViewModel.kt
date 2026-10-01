@@ -2,6 +2,7 @@ package com.quokkalabs.strangeplanet.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.quokkalabs.strangeplanet.R
@@ -145,9 +146,10 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         if (loopJob?.isActive == true) return
-        loopJob = viewModelScope.launch {
+        loopJob = viewModelScope.launch(AndroidUiDispatcher.Main) {
+            val ticker = FrameTicker()
             while (isActive) {
-                delay(16)
+                ticker.awaitTick()
                 val e = engine ?: continue
                 try {
 
