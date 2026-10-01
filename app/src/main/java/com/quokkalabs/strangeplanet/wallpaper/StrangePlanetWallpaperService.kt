@@ -11,15 +11,15 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
-import android.os.Handler
-import android.os.Looper
 import android.service.wallpaper.WallpaperService
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import com.quokkalabs.strangeplanet.StrangePlanetApp
+import com.quokkalabs.strangeplanet.data.PhysicsSettings
 import com.quokkalabs.strangeplanet.data.WallpaperSettings
 import com.quokkalabs.strangeplanet.data.wallpaperDataStore
 import com.quokkalabs.strangeplanet.data.wallpaperSettings
@@ -33,21 +33,47 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 private data class Star(val xFrac: Float, val yFrac: Float, val phase: Float)
 
+/** A speech bubble with its text laid out once, when the creature is tapped. */
+private class Bubble(val layout: StaticLayout, val textWidth: Float, val until: Long)
+
 class StrangePlanetWallpaperService : WallpaperService() {
 
     override fun onCreateEngine(): Engine = StrangePlanetEngine()
 
+    /**
+     * Draws the planet scene on the home screen.
+     *
+     * Frames are paced by the display's vsync (Choreographer) at up to ~60 fps — every
+     * other vsync at 120 Hz — and drawn with a hardware canvas. Physics advance by real
+     * elapsed time, like the app's planet screen. Gradients, paints, paths and text
+     * layouts are built once, not per frame.
+     */
     inner class StrangePlanetEngine : Engine() {
-        private val handler = Handler(Looper.getMainLooper())
-        private val drawRunnable = Runnable { draw() }
+        private val choreographer = Choreographer.getInstance()
+        private var lastFrameNanos = 0L
+        private val frameCallback = object : Choreographer.FrameCallback {
+            override fun doFrame(frameTimeNanos: Long) {
+                if (!visible) return
+                choreographer.postFrameCallback(this)
+                if (lastFrameNanos == 0L) {
+                    lastFrameNanos = frameTimeNanos
+                    draw(0f)
+                    return
+                }
+                val elapsed = frameTimeNanos - lastFrameNanos
+                // Cap at ~60 fps: at 120 Hz this draws exactly every other vsync, so
+                // frames stay evenly spaced while costing half the battery of 120 fps.
+                if (elapsed < MIN_FRAME_NANOS) return
+                lastFrameNanos = frameTimeNanos
+                draw(elapsed / 1_000_000_000f)
+            }
+        }
         private val scope = CoroutineScope(Dispatchers.Main + Job())
 
         private var creatures = emptyList<CreatureState>()
@@ -66,12 +92,25 @@ class StrangePlanetWallpaperService : WallpaperService() {
         private val sayingsRepo by lazy { app.sayingsRepository }
         private val dayContextResolver by lazy { app.dayContextResolver }
 
-        // Speech bubble state: creature type -> (text, show-until timestamp)
-        private val activeBubbles = mutableMapOf<CreatureType, Pair<String, Long>>()
+        private val activeBubbles = mutableMapOf<CreatureType, Bubble>()
 
         // Paints
         private val gradientPaint = Paint()
         private val bitmapCache = mutableMapOf<CreatureType, Bitmap>()
+        // Filtered, so creatures don't look jagged while rotated and scaled.
+        private val creaturePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val starPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            alpha = 242
+        }
+        // One aura gradient at radius AURA_UNIT, scaled and faded per star.
+        private val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                0f, 0f, AURA_UNIT,
+                intArrayOf(Color.argb(230, 255, 255, 255), Color.argb(102, 255, 255, 255), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
         private val bubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(217, 255, 255, 255) // 0.85 alpha
             style = Paint.Style.FILL
@@ -87,7 +126,7 @@ class StrangePlanetWallpaperService : WallpaperService() {
             style = Paint.Style.FILL
         }
 
-        // Planet paints
+        // Planet paints (shaders are built in onSurfaceChanged, when the size is known)
         private val planetBodyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val planetGlowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val planetRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -108,6 +147,10 @@ class StrangePlanetWallpaperService : WallpaperService() {
         private val craterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(255, 212, 165, 185) // craterColor
         }
+
+        // Reused scratch objects (no per-frame allocation)
+        private val rect = RectF()
+        private val pointerPath = Path()
 
         // Star state
         private val stars = listOf(
@@ -132,8 +175,20 @@ class StrangePlanetWallpaperService : WallpaperService() {
             scope.launch {
                 applicationContext.wallpaperDataStore.wallpaperSettings().collect { s ->
                     settings = s
+                    // The physics tuner's values used to apply only inside the app.
+                    applyPhysics(s.physics)
                 }
             }
+        }
+
+        private fun applyPhysics(p: PhysicsSettings) {
+            val engine = physicsEngine ?: return
+            engine.baseSpeed = p.baseSpeed
+            engine.restitution = p.restitution
+            engine.orbitDurationMs = (p.orbitDurationSec * 1000).toLong()
+            engine.flingSpeedMult = p.flingMult
+            engine.linearDrag = p.linearDrag
+            engine.spinDamping = p.spinDamping
         }
 
         override fun onSurfaceChanged(holder: SurfaceHolder?, format: Int, w: Int, h: Int) {
@@ -143,6 +198,7 @@ class StrangePlanetWallpaperService : WallpaperService() {
             density = resources.displayMetrics.density
 
             bubbleTextPaint.textSize = 13f * density
+            activeBubbles.clear()
 
             gradientPaint.shader = LinearGradient(
                 0f, 0f, 0f, height,
@@ -151,22 +207,48 @@ class StrangePlanetWallpaperService : WallpaperService() {
                 Shader.TileMode.CLAMP,
             )
 
+            val cx = width / 2f
+            val cy = height / 2f
+            val planetRadius = min(width, height) * 0.12f
+            // Glow at full strength; its pulsing alpha is applied via the paint each frame.
+            planetGlowPaint.shader = RadialGradient(
+                cx, cy, planetRadius * 2.5f,
+                intArrayOf(
+                    Color.argb(255, 199, 125, 163),
+                    Color.argb(102, 199, 125, 163),
+                    Color.TRANSPARENT,
+                ),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+            planetBodyPaint.shader = RadialGradient(
+                cx - planetRadius * 0.3f, cy - planetRadius * 0.3f, planetRadius * 1.5f,
+                intArrayOf(
+                    Color.argb(255, 232, 180, 200), // planetColor
+                    Color.argb(230, 232, 180, 200), // 0.9
+                    Color.argb(255, 212, 165, 185), // craterColor
+                ),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+
             planetRingPaint.strokeWidth = 6f * density
             planetRingMidPaint.strokeWidth = 4f * density
             planetRingInnerPaint.strokeWidth = 3f * density
 
             physicsEngine = PhysicsEngine(width, height)
+            applyPhysics(settings.physics)
             creatures = CreatureDefaults.create(width, height)
 
-            loadBitmaps()
+            if (bitmapCache.isEmpty()) loadBitmaps()
         }
 
         override fun onVisibilityChanged(isVisible: Boolean) {
             visible = isVisible
+            choreographer.removeFrameCallback(frameCallback)
             if (isVisible) {
-                handler.post(drawRunnable)
-            } else {
-                handler.removeCallbacks(drawRunnable)
+                lastFrameNanos = 0L
+                choreographer.postFrameCallback(frameCallback)
             }
         }
 
@@ -209,7 +291,14 @@ class StrangePlanetWallpaperService : WallpaperService() {
             if (settings.showSpeechBubbles.lwp) {
                 val context = dayContextResolver.resolve()
                 val saying = sayingsRepo.getSaying(type, context.timeOfDay, context.dayType)
-                activeBubbles[type] = saying to (System.currentTimeMillis() + 4000)
+                val layout = StaticLayout.Builder
+                    .obtain(saying, 0, saying.length, bubbleTextPaint, (BUBBLE_MAX_WIDTH_DP * density).toInt())
+                    .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                    .setLineSpacing(4f * density, 1f)
+                    .setMaxLines(4)
+                    .build()
+                val textWidth = (0 until layout.lineCount).maxOf { layout.getLineWidth(it) }
+                activeBubbles[type] = Bubble(layout, textWidth, System.currentTimeMillis() + 4000)
 
                 if (settings.ttsEnabled.lwp) {
                     ttsManager.speak(saying, type)
@@ -219,7 +308,7 @@ class StrangePlanetWallpaperService : WallpaperService() {
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder?) {
             visible = false
-            handler.removeCallbacks(drawRunnable)
+            choreographer.removeFrameCallback(frameCallback)
             bitmapCache.values.forEach { it.recycle() }
             bitmapCache.clear()
             starBitmap?.recycle()
@@ -228,22 +317,25 @@ class StrangePlanetWallpaperService : WallpaperService() {
         }
 
         override fun onDestroy() {
+            choreographer.removeFrameCallback(frameCallback)
             scope.cancel()
             super.onDestroy()
         }
 
-        private fun draw() {
-            if (!visible) return
-
+        /** Advances everything by [dt] seconds of real time and draws a frame. */
+        private fun draw(dt: Float) {
             val engine = physicsEngine ?: return
-            creatures = engine.update(creatures)
+            // Physics constants are tuned per 60 fps tick. The old fixed ~30 fps timer
+            // stepped them once per frame, so creatures moved at half the app's speed.
+            // Clamped so a stall can't teleport creatures through walls.
+            creatures = engine.update(creatures, (dt * 60f).coerceIn(0f, MAX_STEP))
 
             // Advance animation timers
-            animTime += 0.033f
-            planetAnimPhase += 0.033f
+            animTime += dt
+            planetAnimPhase += dt
             planetRingRotation = sin(planetAnimPhase * 2f * PI.toFloat() / 6f) * 15f
-            val orbitGlowBoost = if (physicsEngine?.isOrbiting == true) {
-                val p = physicsEngine!!.orbitProgress
+            val orbitGlowBoost = if (engine.isOrbiting) {
+                val p = engine.orbitProgress
                 if (p < 0.1f) p / 0.1f * 0.5f
                 else if (p < 0.85f) 0.35f
                 else (1f - p) / 0.15f * 0.35f
@@ -252,12 +344,14 @@ class StrangePlanetWallpaperService : WallpaperService() {
 
             // Expire old bubbles
             val now = System.currentTimeMillis()
-            activeBubbles.entries.removeAll { it.value.second < now }
+            activeBubbles.entries.removeAll { it.value.until < now }
 
             val holder = surfaceHolder
             var canvas: Canvas? = null
             try {
-                canvas = holder.lockCanvas()
+                // Hardware canvas: drawn by the GPU. lockCanvas() rasterised the whole
+                // scene on the CPU every frame.
+                canvas = holder.lockHardwareCanvas()
                 if (canvas != null) {
                     drawBackground(canvas)
                     if (settings.showStars.lwp) drawStars(canvas)
@@ -270,8 +364,6 @@ class StrangePlanetWallpaperService : WallpaperService() {
                     holder.unlockCanvasAndPost(canvas)
                 }
             }
-
-            handler.postDelayed(drawRunnable, 33) // ~30fps
         }
 
         private fun drawBackground(canvas: Canvas) {
@@ -280,7 +372,6 @@ class StrangePlanetWallpaperService : WallpaperService() {
 
         private fun drawStars(canvas: Canvas) {
             val bitmap = starBitmap ?: return
-            val starPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
             stars.forEach { star ->
                 val phase = (animTime / 10f + star.phase) % 1f
@@ -291,29 +382,18 @@ class StrangePlanetWallpaperService : WallpaperService() {
                 val starSize = 24f * density * (0.8f + pulse * 0.4f)
 
                 // Aura glow
-                val auraSize = starSize * 1.8f
-                val auraAlpha = (0.5f + pulse * 0.4f)
-                val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-                auraPaint.shader = RadialGradient(
-                    cx, cy, auraSize / 2f,
-                    intArrayOf(
-                        Color.argb((230 * auraAlpha).toInt(), 255, 255, 255),
-                        Color.argb((102 * auraAlpha).toInt(), 255, 255, 255),
-                        Color.TRANSPARENT,
-                    ),
-                    floatArrayOf(0f, 0.5f, 1f),
-                    Shader.TileMode.CLAMP,
-                )
-                canvas.drawCircle(cx, cy, auraSize / 2f, auraPaint)
+                val auraRadius = starSize * 1.8f / 2f
+                auraPaint.alpha = ((0.5f + pulse * 0.4f) * 255).toInt()
+                canvas.save()
+                canvas.translate(cx, cy)
+                canvas.scale(auraRadius / AURA_UNIT, auraRadius / AURA_UNIT)
+                canvas.drawCircle(0f, 0f, AURA_UNIT, auraPaint)
+                canvas.restore()
 
                 // Star bitmap
-                starPaint.alpha = 242
                 val half = starSize / 2f
-                canvas.drawBitmap(
-                    bitmap, null,
-                    RectF(cx - half, cy - half, cx + half, cy + half),
-                    starPaint,
-                )
+                rect.set(cx - half, cy - half, cx + half, cy + half)
+                canvas.drawBitmap(bitmap, null, rect, starPaint)
             }
         }
 
@@ -330,16 +410,7 @@ class StrangePlanetWallpaperService : WallpaperService() {
             val ringInnerH = planetRadius * 0.32f
 
             // Ambient glow
-            planetGlowPaint.shader = RadialGradient(
-                cx, cy, planetRadius * 2.5f,
-                intArrayOf(
-                    Color.argb((planetGlowAlpha * 255).toInt(), 199, 125, 163),
-                    Color.argb((planetGlowAlpha * 0.4f * 255).toInt(), 199, 125, 163),
-                    Color.TRANSPARENT,
-                ),
-                floatArrayOf(0f, 0.5f, 1f),
-                Shader.TileMode.CLAMP,
-            )
+            planetGlowPaint.alpha = (planetGlowAlpha * 255).toInt().coerceIn(0, 255)
             canvas.drawCircle(cx, cy, planetRadius * 2.5f, planetGlowPaint)
 
             // Back ring arcs (behind planet)
@@ -351,16 +422,6 @@ class StrangePlanetWallpaperService : WallpaperService() {
             canvas.restore()
 
             // Planet body
-            planetBodyPaint.shader = RadialGradient(
-                cx - planetRadius * 0.3f, cy - planetRadius * 0.3f, planetRadius * 1.5f,
-                intArrayOf(
-                    Color.argb(255, 232, 180, 200), // planetColor
-                    Color.argb(230, 232, 180, 200), // 0.9
-                    Color.argb(255, 212, 165, 185), // craterColor
-                ),
-                floatArrayOf(0f, 0.5f, 1f),
-                Shader.TileMode.CLAMP,
-            )
             canvas.drawCircle(cx, cy, planetRadius, planetBodyPaint)
 
             // Front ring arcs (in front of planet)
@@ -386,10 +447,8 @@ class StrangePlanetWallpaperService : WallpaperService() {
             startAngle: Float, sweepAngle: Float,
             paint: Paint,
         ) {
-            canvas.drawArc(
-                RectF(cx - halfW, cy - halfH, cx + halfW, cy + halfH),
-                startAngle, sweepAngle, false, paint,
-            )
+            rect.set(cx - halfW, cy - halfH, cx + halfW, cy + halfH)
+            canvas.drawArc(rect, startAngle, sweepAngle, false, paint)
         }
 
         private fun drawCreatures(canvas: Canvas, behindPlanet: Boolean) {
@@ -407,28 +466,23 @@ class StrangePlanetWallpaperService : WallpaperService() {
                 canvas.save()
                 canvas.translate(creature.x, creature.y)
                 canvas.rotate(creature.rotation)
-
-                canvas.drawBitmap(
-                    bitmap, null,
-                    RectF(-halfSize, -halfSize, halfSize, halfSize),
-                    null,
-                )
-
+                rect.set(-halfSize, -halfSize, halfSize, halfSize)
+                canvas.drawBitmap(bitmap, null, rect, creaturePaint)
                 canvas.restore()
 
                 // Speech bubble
                 if (settings.showSpeechBubbles.lwp) {
                     val bubble = activeBubbles[creature.type]
                     if (bubble != null) {
-                        drawSpeechBubble(canvas, creature.x, creature.y - halfSize - 12f * density, bubble.first)
+                        drawSpeechBubble(canvas, creature.x, creature.y - halfSize - 12f * density, bubble)
                     }
                 }
             }
         }
 
-        private fun drawSpeechBubble(canvas: Canvas, cx: Float, bottomY: Float, text: String) {
-            val maxWidth = (320 * density).toInt()
-            val minWidth = (160 * density).toInt()
+        private fun drawSpeechBubble(canvas: Canvas, cx: Float, bottomY: Float, bubble: Bubble) {
+            val maxWidth = BUBBLE_MAX_WIDTH_DP * density
+            val minWidth = 160f * density
             val minHeight = 54f * density
             val padH = 14f * density
             val padV = 10f * density
@@ -437,21 +491,14 @@ class StrangePlanetWallpaperService : WallpaperService() {
             val pointerHalfWidth = 10f * density
             val margin = 8f * density
 
-            val layout = StaticLayout.Builder
-                .obtain(text, 0, text.length, bubbleTextPaint, maxWidth)
-                .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                .setLineSpacing(4f * density, 1f)
-                .setMaxLines(4)
-                .build()
-
-            val textWidth = (0 until layout.lineCount).maxOf { layout.getLineWidth(it) }
-            val bubbleWidth = (textWidth + padH * 2).coerceIn(minWidth.toFloat(), maxWidth.toFloat())
+            val layout = bubble.layout
+            val bubbleWidth = (bubble.textWidth + padH * 2).coerceIn(minWidth, maxWidth)
             val bubbleHeight = (layout.height + padV * 2).coerceAtLeast(minHeight)
 
-            var left = cx - bubbleWidth / 2f
-            var top = bottomY - pointerHeight - bubbleHeight
-            var right = cx + bubbleWidth / 2f
-            var bottom = bottomY - pointerHeight
+            val left = cx - bubbleWidth / 2f
+            val top = bottomY - pointerHeight - bubbleHeight
+            val right = cx + bubbleWidth / 2f
+            val bottom = bottomY - pointerHeight
 
             // Clamp horizontally
             val shiftX = when {
@@ -467,16 +514,16 @@ class StrangePlanetWallpaperService : WallpaperService() {
             canvas.translate(shiftX, shiftY)
 
             // Bubble body
-            canvas.drawRoundRect(RectF(left, top, right, bottom), cornerRadius, cornerRadius, bubblePaint)
+            rect.set(left, top, right, bottom)
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, bubblePaint)
 
             // Pointer triangle — stays anchored at creature X regardless of bubble shift
             val pointerX = (cx - shiftX).coerceIn(left + 20f * density, right - 20f * density)
-            val pointerPath = Path().apply {
-                moveTo(pointerX - pointerHalfWidth, bottom)
-                lineTo(pointerX, bottom + pointerHeight)
-                lineTo(pointerX + pointerHalfWidth, bottom)
-                close()
-            }
+            pointerPath.reset()
+            pointerPath.moveTo(pointerX - pointerHalfWidth, bottom)
+            pointerPath.lineTo(pointerX, bottom + pointerHeight)
+            pointerPath.lineTo(pointerX + pointerHalfWidth, bottom)
+            pointerPath.close()
             canvas.drawPath(pointerPath, bubblePointerPaint)
 
             // Text
@@ -502,5 +549,13 @@ class StrangePlanetWallpaperService : WallpaperService() {
             starBitmap?.recycle()
             starBitmap = BitmapFactory.decodeResource(resources, com.quokkalabs.strangeplanet.R.drawable.sp_star)
         }
+    }
+
+    private companion object {
+        /** Just under 16.7 ms: draw every vsync at 60 Hz, every other one at 120 Hz. */
+        const val MIN_FRAME_NANOS = 15_000_000L
+        const val MAX_STEP = 3f
+        const val AURA_UNIT = 100f
+        const val BUBBLE_MAX_WIDTH_DP = 320
     }
 }
