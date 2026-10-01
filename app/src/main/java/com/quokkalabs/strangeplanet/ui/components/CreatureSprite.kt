@@ -17,23 +17,28 @@ import androidx.compose.ui.unit.dp
 import com.quokkalabs.strangeplanet.data.model.CreatureState
 import kotlin.math.roundToInt
 
+/**
+ * [creature] supplies the type and size; [current] supplies the live position and
+ * rotation and is only read in the layout/draw phases, so a moving creature neither
+ * recomposes nor re-measures — it is just placed and drawn again.
+ */
 @Composable
 fun CreatureSprite(
     creature: CreatureState,
     sizeScale: Float = 1f,
+    current: () -> CreatureState = { creature },
     onTap: () -> Unit,
 ) {
     val density = LocalDensity.current
     val sizePx = creature.size * sizeScale * density.density
 
-    // Position and rotation are applied in the layout/draw phases via lambdas, so a
-    // moving creature doesn't force a re-layout of its subtree every frame.
     Box(
         modifier = Modifier
             .offset {
+                val c = current()
                 IntOffset(
-                    (creature.x - sizePx / 2).roundToInt(),
-                    (creature.y - sizePx / 2).roundToInt(),
+                    (c.x - sizePx / 2).roundToInt(),
+                    (c.y - sizePx / 2).roundToInt(),
                 )
             }
             .size((creature.size * sizeScale).dp),
@@ -43,7 +48,7 @@ fun CreatureSprite(
             contentDescription = creature.type.displayName,
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { rotationZ = creature.rotation }
+                .graphicsLayer { rotationZ = current().rotation }
                 .pointerInput(creature.type) {
                     detectTapGestures { onTap() }
                 },
