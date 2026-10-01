@@ -6,6 +6,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -112,15 +113,19 @@ class PhysicsEngine(
         }.toMap()
     }
 
-    fun update(creatures: List<CreatureState>): List<CreatureState> {
+    /**
+     * Advances the simulation. [step] is the elapsed time in units of a 60 fps tick
+     * (1f = 1/60 s), so motion runs at the same speed whatever the frame rate.
+     */
+    fun update(creatures: List<CreatureState>, step: Float = 1f): List<CreatureState> {
         if (isOrbiting) {
-            return updateOrbiting(creatures)
+            return updateOrbiting(creatures, step)
         }
 
-        val updated = creatures.map { it.copy() }.toMutableList()
+        val updated = creatures.toMutableList()
 
-        applyMovement(updated)
-        applyChaseForces(updated)
+        applyMovement(updated, step)
+        applyChaseForces(updated, step)
         resolveWallCollisions(updated)
         resolveCreatureCollisions(updated)
         nudgeStoppedCreatures(updated)
@@ -137,7 +142,7 @@ class PhysicsEngine(
         return (cx + ox * cosT - oy * sinT) to (cy + ox * sinT + oy * cosT)
     }
 
-    private fun updateOrbiting(creatures: List<CreatureState>): List<CreatureState> {
+    private fun updateOrbiting(creatures: List<CreatureState>, step: Float): List<CreatureState> {
         val elapsed = System.currentTimeMillis() - orbitStartTime
         val cx = screenWidth / 2f
         val cy = screenHeight / 2f
@@ -161,7 +166,7 @@ class PhysicsEngine(
                     y = startPos.second + (targetY - startPos.second) * eased,
                     vx = 0f,
                     vy = 0f,
-                    rotation = c.rotation + params.angularSpeed * 2f,
+                    rotation = c.rotation + params.angularSpeed * 2f * step,
                 )
             } else {
                 c.copy(
@@ -169,7 +174,7 @@ class PhysicsEngine(
                     y = targetY,
                     vx = 0f,
                     vy = 0f,
-                    rotation = c.rotation + params.angularSpeed * 2f,
+                    rotation = c.rotation + params.angularSpeed * 2f * step,
                 )
             }
         }
@@ -201,9 +206,9 @@ class PhysicsEngine(
         }
     }
 
-    private fun applyChaseForces(creatures: MutableList<CreatureState>) {
+    private fun applyChaseForces(creatures: MutableList<CreatureState>, step: Float) {
         if (isBinaryOrbiting) {
-            applyBinaryOrbit(creatures)
+            applyBinaryOrbit(creatures, step)
             return
         }
 
@@ -245,19 +250,23 @@ class PhysicsEngine(
         val chaseForce = baseSpeed * 1.8f
         val fleeForce = baseSpeed * 2.2f
 
+        // Per-tick blend of 0.85 old / 0.15 target, scaled to the elapsed step
+        val keep = 0.85f.pow(step)
+        val gain = 1f - keep
+
         creatures[rollIdx] = rollsuck.copy(
-            vx = rollsuck.vx * 0.85f + nx * chaseForce * 0.15f,
-            vy = rollsuck.vy * 0.85f + ny * chaseForce * 0.15f,
+            vx = rollsuck.vx * keep + nx * chaseForce * gain,
+            vy = rollsuck.vy * keep + ny * chaseForce * gain,
         )
 
         creatures[sockIdx] = socks.copy(
-            vx = socks.vx * 0.85f - nx * fleeForce * 0.15f,
-            vy = socks.vy * 0.85f - ny * fleeForce * 0.15f,
-            angularVelocity = socks.angularVelocity + (Math.random().toFloat() - 0.5f) * 1.5f,
+            vx = socks.vx * keep - nx * fleeForce * gain,
+            vy = socks.vy * keep - ny * fleeForce * gain,
+            angularVelocity = socks.angularVelocity + (Math.random().toFloat() - 0.5f) * 1.5f * step,
         )
     }
 
-    private fun applyBinaryOrbit(creatures: MutableList<CreatureState>) {
+    private fun applyBinaryOrbit(creatures: MutableList<CreatureState>, step: Float) {
         val elapsed = System.currentTimeMillis() - binaryOrbitStartTime
 
         val rollIdx = creatures.indexOfFirst { it.type == CreatureType.ROLLSUCK }
@@ -284,7 +293,7 @@ class PhysicsEngine(
             y = cy + sin(angle) * r,
             vx = 0f,
             vy = 0f,
-            rotation = creatures[rollIdx].rotation + spinRate,
+            rotation = creatures[rollIdx].rotation + spinRate * step,
         )
 
         creatures[sockIdx] = creatures[sockIdx].copy(
@@ -292,7 +301,7 @@ class PhysicsEngine(
             y = cy + sin(angle + PI.toFloat()) * r,
             vx = 0f,
             vy = 0f,
-            rotation = creatures[sockIdx].rotation - spinRate * 1.5f,
+            rotation = creatures[sockIdx].rotation - spinRate * 1.5f * step,
         )
     }
 
@@ -324,16 +333,16 @@ class PhysicsEngine(
         chaseStartTime = 0L
     }
 
-    private fun applyMovement(creatures: MutableList<CreatureState>) {
+    private fun applyMovement(creatures: MutableList<CreatureState>, step: Float) {
+        val dragFactor = (1f - linearDrag).coerceAtLeast(0f).pow(step)
+        val spinFactor = (1f - spinDamping).coerceAtLeast(0f).pow(step)
         creatures.forEachIndexed { i, c ->
-            val dragFactor = 1f - linearDrag
-            val spinFactor = 1f - spinDamping
             creatures[i] = c.copy(
-                x = c.x + c.vx,
-                y = c.y + c.vy,
+                x = c.x + c.vx * step,
+                y = c.y + c.vy * step,
                 vx = c.vx * dragFactor,
                 vy = c.vy * dragFactor,
-                rotation = c.rotation + c.angularVelocity,
+                rotation = c.rotation + c.angularVelocity * step,
                 angularVelocity = c.angularVelocity * spinFactor,
             )
         }
