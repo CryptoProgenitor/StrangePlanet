@@ -3,17 +3,17 @@ package com.quokkalabs.strangeplanet.domain
 import com.quokkalabs.strangeplanet.data.model.GameMode
 import com.quokkalabs.strangeplanet.data.model.GamePhase
 import com.quokkalabs.strangeplanet.data.model.PongGameState
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 
 /**
- * Can an honest-looking hit let the ball pass through the bat?
+ * An honest-looking hit must not let the ball pass through the bat.
  *
- * PongEngine only tests for a paddle hit on the single tick in which the ball's
- * bottom crosses the line `playerPaddleY - paddleHeight` (which is drawn ~half a
- * paddle-height ABOVE the visible bar), using the bat's position at the end of
- * that tick.
+ * PongEngine used to test for a hit only on the single tick the ball's bottom
+ * crossed a line drawn ~half a bar above the visible bar, and only at the bat's
+ * end-of-tick position. A hit now counts while the ball overlaps the drawn bar,
+ * across the path the bat swept; a ball that is already past still scores.
  */
 class PongHitDetectionTest {
 
@@ -40,7 +40,6 @@ class PongHitDetectionTest {
      * line (still above the drawn bar), so the engine never checks again, and the
      * ball then visibly overlaps the bat for several ticks while falling through it.
      */
-    @Ignore("BUG: PongEngine only checks for a hit on the tick the ball crosses the hit line")
     @Test
     fun batArrivingWhileBallOverlapsTheBar_shouldDeflect() {
         val x = 300f
@@ -48,11 +47,10 @@ class PongHitDetectionTest {
         var s = falling(x, ballBottom = hitLine - 2f, batX = 800f)
         s = engine.update(s, playerTouchX = 800f)
         assertTrue("setup: still falling after the crossing tick", s.ballVy > 0f)
-        // Tick 2: the bat is now right under the ball, which overlaps the drawn bar.
+        // Tick 2: the bat is now right under the ball, which will overlap the drawn bar.
+        val nextY = s.ballY + s.ballVy
+        assertTrue("setup: ball overlaps the drawn bar", nextY + r > barTop && nextY - r < barBottom)
         s = engine.update(s, playerTouchX = x)
-        val ballBottom = s.ballY + r
-        val ballTop = s.ballY - r
-        assertTrue("setup: ball overlaps the drawn bar", ballBottom > barTop && ballTop < barBottom)
         assertTrue("ball overlapping the bat should bounce, vy=${s.ballVy}", s.ballVy < 0f)
     }
 
@@ -60,7 +58,6 @@ class PongHitDetectionTest {
      * A fast swipe carries the bat right across the ball's path during the crossing
      * tick, but only the bat's end position is tested.
      */
-    @Ignore("BUG: PongEngine tests only the bat's end-of-tick position, not the path it swept")
     @Test
     fun batSweepingAcrossTheBallDuringTheTick_shouldDeflect() {
         val x = 540f
@@ -69,5 +66,26 @@ class PongHitDetectionTest {
         var s = falling(x, ballBottom = hitLine - 2f, batX = x - reach - 5f)
         s = engine.update(s, playerTouchX = x + reach + 5f)
         assertTrue("bat swept through the ball's path, vy=${s.ballVy}", s.ballVy < 0f)
+    }
+
+    /** A ball that has already passed the bar is a genuine miss, however the bat moves. */
+    @Test
+    fun ballAlreadyPastTheBar_stillScores() {
+        val x = 300f
+        var s = falling(x, ballBottom = barBottom + 2f * r + 4f, batX = 800f) // centre below the bar
+        s = engine.update(s, playerTouchX = x)
+        assertTrue("no bounce once the ball is past, vy=${s.ballVy}", s.ballVy > 0f)
+        repeat(200) { if (s.phase == GamePhase.PLAYING) s = engine.update(s, playerTouchX = x) }
+        assertEquals(GamePhase.POINT_SCORED, s.phase)
+    }
+
+    /** A clean hit bounces off the drawn bar's top edge. */
+    @Test
+    fun cleanHit_bouncesFromTheDrawnBarTop() {
+        val x = 540f
+        var s = falling(x, ballBottom = barTop - 2f, batX = x)
+        s = engine.update(s, playerTouchX = x)
+        assertTrue(s.ballVy < 0f)
+        assertEquals(barTop - r, s.ballY, 1e-3f)
     }
 }

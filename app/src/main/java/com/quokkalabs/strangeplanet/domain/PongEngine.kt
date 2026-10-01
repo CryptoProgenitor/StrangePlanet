@@ -208,20 +208,27 @@ class PongEngine(
             wallBounced = true
         }
 
-        // Player paddle collision
-        if (vy > 0 && by + ballRadius >= playerPaddleY - paddleHeight &&
-            state.ballY + ballRadius < playerPaddleY - paddleHeight
-        ) {
-            if (bx >= newPlayerX - halfPaddle - ballRadius &&
-                bx <= newPlayerX + halfPaddle + ballRadius
-            ) {
+        // Bars as drawn: centred on their Y, paddleHeight thick.
+        val halfBar = paddleHeight / 2f
+        val playerBarTop = playerPaddleY - halfBar
+        val playerBarBottom = playerPaddleY + halfBar
+        val aiBarTop = aiPaddleY - halfBar
+        val aiBarBottom = aiPaddleY + halfBar
+
+        // Player paddle collision. A hit counts for as long as the ball overlaps the
+        // bar (until its centre passes the bar's far edge) — not only on the single
+        // tick it first reaches it — and the bat counts across the whole path it swept
+        // this tick. Otherwise a bat that arrives just in time, or is flicked across
+        // the ball, lets an honest-looking hit pass straight through.
+        if (vy > 0 && by + ballRadius >= playerBarTop && by <= playerBarBottom) {
+            if (sweptOverlap(state.ballX, bx, state.playerPaddleX, newPlayerX, halfPaddle)) {
                 val hitPos = ((bx - newPlayerX) / halfPaddle).coerceIn(-1f, 1f)
                 val angle = hitPos * maxDeflection
                 val speed = (ballBaseSpeed + rally * speedRampPerHit).coerceAtMost(ballMaxSpeed)
                 vx = (speed * sin(angle) + playerPaddleVx * spinFactor)
                     .coerceIn(-speed * maxSpinRatio, speed * maxSpinRatio)
                 vy = -speed * cos(angle)
-                by = playerPaddleY - paddleHeight - ballRadius
+                by = playerBarTop - ballRadius
                 rally++
                 playerPulse = 1f
 
@@ -237,19 +244,17 @@ class PongEngine(
         } else {
             0f
         }
-        if (vy < 0 && by - ballRadius <= aiPaddleY + paddleHeight &&
-            state.ballY - ballRadius > aiPaddleY + paddleHeight - lagBuffer
-        ) {
-            if (bx >= newAiX - halfPaddle - ballRadius &&
-                bx <= newAiX + halfPaddle + ballRadius
-            ) {
+        // Same rules as the player's bat; lagBuffer extends the window for a remote
+        // player's bat, whose position reaches the host a few ticks late.
+        if (vy < 0 && by - ballRadius <= aiBarBottom && by >= aiBarTop - lagBuffer) {
+            if (sweptOverlap(state.ballX, bx, state.aiPaddleX, newAiX, halfPaddle)) {
                 val hitPos = ((bx - newAiX) / halfPaddle).coerceIn(-1f, 1f)
                 val angle = hitPos * maxDeflection
                 val speed = (ballBaseSpeed + rally * speedRampPerHit).coerceAtMost(ballMaxSpeed)
                 vx = (speed * sin(angle) + aiPaddleVx * spinFactor)
                     .coerceIn(-speed * maxSpinRatio, speed * maxSpinRatio)
                 vy = speed * cos(angle)
-                by = aiPaddleY + paddleHeight + ballRadius
+                by = aiBarBottom + ballRadius
                 rally++
                 aiPulse = 1f
             }
@@ -280,6 +285,16 @@ class PongEngine(
             activeSaying = saying,
             wallBounced = wallBounced,
         )
+    }
+
+    /**
+     * Did the ball's horizontal path this tick ([ballFrom]..[ballTo]) meet the strip the
+     * bat swept ([batFrom]..[batTo], widened by half a bat plus the ball's radius)?
+     */
+    private fun sweptOverlap(ballFrom: Float, ballTo: Float, batFrom: Float, batTo: Float, halfPaddle: Float): Boolean {
+        val reach = halfPaddle + ballRadius
+        return maxOf(ballFrom, ballTo) >= minOf(batFrom, batTo) - reach &&
+            minOf(ballFrom, ballTo) <= maxOf(batFrom, batTo) + reach
     }
 
     private fun scorePoint(state: PongGameState, scorer: GameSide): PongGameState {

@@ -99,7 +99,8 @@ class PongEngineTest {
         val n = engine.update(s, playerTouchX = w / 2f)
         assertTrue("ball should now travel up, vy=${n.ballVy}", n.ballVy < 0f)
         assertEquals(-engine.ballBaseSpeed, n.ballVy, 1e-3f) // centre hit: straight back
-        assertEquals(engine.playerPaddleY - engine.paddleHeight - engine.ballRadius, n.ballY, 1e-3f)
+        // Bounces off the drawn bar's top edge (the bar is centred on playerPaddleY).
+        assertEquals(engine.playerPaddleY - engine.paddleHeight / 2f - engine.ballRadius, n.ballY, 1e-3f)
         assertEquals(1, n.rally)
         assertEquals(1f, n.playerHitPulse, 0f)
     }

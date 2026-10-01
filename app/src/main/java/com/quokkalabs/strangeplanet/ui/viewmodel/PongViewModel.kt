@@ -299,7 +299,14 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     val prevState = _gameState.value
-                    val lagFrames = if (mode == GameMode.ONLINE && mpRole == BtRole.HOST) 10 else 0
+                    // The remote player's bat reaches the host a few ticks late; give it
+                    // that much grace so their on-time hits don't pass through.
+                    val lagFrames = when {
+                        mpRole != BtRole.HOST -> 0
+                        mode == GameMode.ONLINE -> 10
+                        mode == GameMode.BLUETOOTH -> 4
+                        else -> 0
+                    }
                     _gameState.update { e.update(it, playerTouchX, p2Touch, lagFrames) }
 
                     var newState = _gameState.value
@@ -612,8 +619,11 @@ class PongViewModel(application: Application) : AndroidViewModel(application) {
         paddleVelocity: Float = 0f,
     ) {
         if (drVy <= 0f) return                             // not moving toward player paddle
-        val paddleSurface = eng.playerPaddleY - eng.paddleHeight
+        // Same window as PongEngine: from the drawn bar's top until the ball's centre
+        // has passed its bottom edge.
+        val paddleSurface = eng.playerPaddleY - eng.paddleHeight / 2f
         if (drBallY + eng.ballRadius < paddleSurface) return // not yet at paddle surface
+        if (drBallY > eng.playerPaddleY + eng.paddleHeight / 2f) return // already past it
 
         val halfPaddle = eng.paddleWidth / 2f
         val clientPaddleX = playerTouchX?.coerceIn(halfPaddle, sw - halfPaddle)

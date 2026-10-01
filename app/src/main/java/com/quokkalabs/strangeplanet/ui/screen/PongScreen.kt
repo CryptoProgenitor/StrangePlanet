@@ -1,5 +1,6 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import com.quokkalabs.strangeplanet.ui.components.rememberScaledImage
@@ -221,14 +222,26 @@ fun PongScreen(
                     .fillMaxSize()
                     .pointerInput(Unit) {
                         awaitPointerEventScope {
+                            // With one bat on this phone, only one finger steers it: the
+                            // first one down. Every finger used to move it, so a second
+                            // finger or a palm made the bat jump away from the ball.
+                            var steeringFinger: PointerId? = null
                             while (true) {
                                 val event = awaitPointerEvent()
-                                event.changes.forEach { change ->
-                                    if (change.pressed) {
-                                        viewModel.onTouch(change.position.x, change.position.y)
+                                if (state.gameMode == GameMode.TWO_PLAYER) {
+                                    // Two bats on one screen: each half has its own finger.
+                                    event.changes.forEach { change ->
+                                        if (change.pressed) {
+                                            viewModel.onTouch(change.position.x, change.position.y)
+                                        }
                                     }
-                                    change.consume()
+                                } else {
+                                    val finger = event.changes.firstOrNull { it.id == steeringFinger && it.pressed }
+                                        ?: event.changes.firstOrNull { it.pressed }
+                                    steeringFinger = finger?.id
+                                    if (finger != null) viewModel.onTouch(finger.position.x, finger.position.y)
                                 }
+                                event.changes.forEach { it.consume() }
                             }
                         }
                     },
