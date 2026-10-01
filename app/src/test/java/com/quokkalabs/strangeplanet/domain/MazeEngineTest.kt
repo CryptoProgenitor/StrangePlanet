@@ -10,7 +10,6 @@ import com.quokkalabs.strangeplanet.data.model.SeekerType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 import kotlin.math.abs
 import kotlin.random.Random
@@ -116,7 +115,6 @@ class MazeEngineTest {
         }
     }
 
-    @Ignore("BUG: MazeEngine.updatePlaying mid-tile reversal flips progress but keeps col/row, so the being jumps ~a tile and can walk into the wall behind it")
     @Test
     fun randomSteeringIncludingReversals_neverEntersAWall() {
         var s = playing().copy(seekers = emptyList())
@@ -128,7 +126,6 @@ class MazeEngineTest {
         }
     }
 
-    @Ignore("BUG: MazeEngine.updatePlaying mid-tile reversal flips progress but keeps col/row, so the being jumps ~a tile and can walk into the wall behind it")
     @Test
     fun midTileReversal_isContinuousAndStaysOutOfWalls() {
         // Being has just left the corner tile (1,1) heading right; the tile behind
@@ -154,7 +151,6 @@ class MazeEngineTest {
         assertEquals(1, s.being.row)
     }
 
-    @Ignore("BUG: MazeEngine.updatePlaying flips seeker dir on a sock without fixing progress/col, so mid-tile seekers jump and can enter the wall behind them")
     @Test
     fun sockReversesSeekers_withoutTeleportingThemIntoWalls() {
         // A seeker that has just left (1,3) heading right — the tile behind it, (0,3),

@@ -235,8 +235,13 @@ class MazeEngine(
             }
         }
 
-        // Mid-tile reversal is always legal (no wall check needed).
+        // Mid-tile reversal is always legal: the tile behind is the one it came from.
         if (queued != PacDir.NONE && queued == dir.opposite()) {
+            // Turning round mid-tile: step onto the tile ahead and mirror the progress, so
+            // the drawn position (tile + dir × progress) stays put. Flipping only dir and
+            // progress made it jump back almost a tile — into the wall at a corridor end.
+            col = wrapCol(col + dir.dc, row)
+            row = (row + dir.dr).coerceIn(0, rows - 1)
             dir = queued
             queued = PacDir.NONE
             progress = 1f - progress
@@ -507,8 +512,13 @@ class MazeEngine(
         // world (wave timer, seekers, collisions) advances every tick
         // regardless, so seekers never freeze while the player is stopped.
         if (dir != PacDir.NONE) {
-            // Mid-tile reversal is always legal (no wall check needed).
+            // Mid-tile reversal is always legal: the tile behind is the one it came from.
             if (queued != PacDir.NONE && queued == dir.opposite()) {
+                // Turning round mid-tile: step onto the tile ahead and mirror the progress, so
+                // the drawn position (tile + dir × progress) stays put. Flipping only dir and
+                // progress made it jump back almost a tile — into the wall at a corridor end.
+                col = wrapCol(col + dir.dc, row)
+                row += dir.dr
                 dir = queued
                 queued = PacDir.NONE
                 progress = 1f - progress
@@ -561,7 +571,15 @@ class MazeEngine(
             if ((s.mode == SeekerMode.SCATTER || s.mode == SeekerMode.CHASE) &&
                 s.penTimer == 0
             )
-                s.copy(mode = SeekerMode.FRIGHTENED, dir = s.dir.opposite())
+                s.copy(
+                    mode = SeekerMode.FRIGHTENED,
+                    // Reverse in place (see the being's reversal above): step onto the
+                    // tile ahead and mirror the progress so the seeker doesn't jump.
+                    col = wrapCol(s.col + s.dir.dc, s.row),
+                    row = (s.row + s.dir.dr).coerceIn(0, rows - 1),
+                    dir = s.dir.opposite(),
+                    progress = if (s.dir == PacDir.NONE) s.progress else 1f - s.progress,
+                )
             else s
         } else state.seekers
 

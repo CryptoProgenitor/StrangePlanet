@@ -128,6 +128,7 @@ class PhysicsEngine(
         applyChaseForces(updated, step)
         resolveWallCollisions(updated)
         resolveCreatureCollisions(updated)
+        clampToScreen(updated)
         nudgeStoppedCreatures(updated)
 
         return updated
@@ -345,6 +346,18 @@ class PhysicsEngine(
                 rotation = c.rotation + c.angularVelocity * step,
                 angularVelocity = c.angularVelocity * spinFactor,
             )
+        }
+    }
+
+    /**
+     * Creature collisions run after the wall pass and could push a creature up to
+     * ~35 px off screen for a frame. Put positions back on screen.
+     */
+    private fun clampToScreen(creatures: MutableList<CreatureState>) {
+        creatures.forEachIndexed { i, c ->
+            val x = c.x.coerceIn(minOf(c.radius, screenWidth / 2f), maxOf(screenWidth - c.radius, screenWidth / 2f))
+            val y = c.y.coerceIn(minOf(c.radius, screenHeight / 2f), maxOf(screenHeight - c.radius, screenHeight / 2f))
+            if (x != c.x || y != c.y) creatures[i] = c.copy(x = x, y = y)
         }
     }
 

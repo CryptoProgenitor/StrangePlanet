@@ -183,7 +183,7 @@ class TetrisEngine {
             val landed = s.active!!.copy(row = dropRow)
             val newGrid = lockPiece(s.grid, landed)
             val (clearedGrid, clearedRows) = clearLines(newGrid)
-            return finishLock(s, clearedGrid, clearedRows)
+            return finishLock(s, newGrid, clearedGrid, clearedRows)
         }
 
         // ── Lateral DAS ───────────────────────────────────────────────────
@@ -222,7 +222,7 @@ class TetrisEngine {
             s = if (newLock >= LOCK_FRAMES) {
                 val newGrid = lockPiece(s.grid, s.active!!)
                 val (clearedGrid, clearedRows) = clearLines(newGrid)
-                finishLock(s, clearedGrid, clearedRows)
+                finishLock(s, newGrid, clearedGrid, clearedRows)
             } else {
                 s.copy(lockFrames = newLock)
             }
@@ -233,6 +233,7 @@ class TetrisEngine {
 
     private fun finishLock(
         s: TetrisState,
+        lockedGrid: List<List<TetroType?>>,
         clearedGrid: List<List<TetroType?>>,
         clearedRows: List<Int>,
     ): TetrisState {
@@ -247,7 +248,10 @@ class TetrisEngine {
         val gameOver = !canFit(clearedGrid, spawnedActive)
 
         return s.copy(
-            grid = if (clearedRows.isEmpty()) clearedGrid else s.grid,  // keep locked grid until CLEARING phase applies
+            // While the clear flashes, show the grid with the piece locked in; applyClear
+            // then removes the full rows. (It used to keep s.grid — the grid from before
+            // the lock — so the piece's cells outside the cleared rows vanished.)
+            grid = if (clearedRows.isEmpty()) clearedGrid else lockedGrid,
             clearingRows = clearedRows,
             active = if (clearedRows.isEmpty()) spawnedActive else null,
             next = if (clearedRows.isEmpty()) randomType() else s.next,

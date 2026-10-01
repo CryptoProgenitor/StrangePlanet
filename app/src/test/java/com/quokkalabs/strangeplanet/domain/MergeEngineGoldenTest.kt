@@ -17,7 +17,9 @@ import org.junit.Test
  * GOLDEN / characterization test for MergeEngine.update physics (integration
  * substeps, resolveWalls, resolveCollisions, merge pass, merge cooldown).
  *
- * The expected numbers were recorded from the engine as of commit 0c26b57. Any
+ * The expected numbers were recorded from commit 0c26b57 and re-recorded on
+ * purpose when orbs were clamped back inside the vessel after collisions
+ * (they used to poke through walls for a frame). Any
  * refactor of the physics that is meant to be behaviour-preserving must keep
  * this test green. If the physics is changed ON PURPOSE, re-record the
  * constants (print runScenario()'s orbs/score) and say so in the commit.
@@ -87,17 +89,17 @@ class MergeEngineGoldenTest {
 
         // Final orbs, in list order, after 400 ticks.
         private val EXPECTED = listOf(
-            G(MOONLET, 919.9519f, 2102.2168f, 27.190765f, 13.839883f, 0.004601891f, 0.08470127f),
-            G(PEBBLE, 459.29007f, 1987.5732f, 3.3703616f, -13.155343f, -6.115925f, -2.3147225f),
-            G(MOON, 645.0019f, 2081.993f, 20.49169f, 10.496643f, -0.1349154f, -0.15497482f),
-            G(DUST_MOTE, 537.9643f, 2017.235f, 4.002268f, 40.32528f, -2.8590767f, -0.7946967f),
-            G(BOULDER, 584.65735f, 1943.803f, -33.49061f, 2.331953f, -5.0680985f, -0.6544087f),
-            G(PEBBLE, 952.0249f, 1990.6587f, 18.304312f, 3.4412007f, 7.442785f, 0.56422603f),
-            G(DUST_MOTE, 225.45578f, 2145.87f, -3.8084145f, 30.790405f, 4.1469593f, 1.2282071f),
-            G(MOONLET, 477.6615f, 2103.4775f, 21.93203f, 53.403587f, 1.7011285f, 0.31356832f),
-            G(BOULDER, 142.34042f, 2119.8594f, 3.9599504f, -19.024178f, -0.6176841f, 0.041170016f),
-            G(STRANGE_PLANET, 305.24075f, 2022.4471f, 34.102154f, 18.515968f, 0.30729932f, 0.033504896f),
-            G(BOULDER, 790.65393f, 2120.2605f, 24.557827f, 2.8073616f, 0.38657892f, 0.10936811f),
+            G(MOONLET, 919.2096f, 2101.8096f, 18.722227f, 14.1646385f, 0.16619356f, 0.10243611f),
+            G(PEBBLE, 424.11456f, 1987.4021f, 8.565763f, 25.309237f, 4.816498f, -0.35199472f),
+            G(MOON, 645.6665f, 2081.851f, 15.238136f, -6.502435f, -0.3769825f, -0.10955724f),
+            G(DUST_MOTE, 537.6858f, 2145.3552f, 20.094393f, 8.613855f, 1.9780204f, -0.4767406f),
+            G(BOULDER, 520.94354f, 1998.1626f, 5.7111597f, 4.4241757f, -4.740001f, -0.10079982f),
+            G(PEBBLE, 951.8688f, 1990.4692f, 18.62275f, 1.789938f, 7.317105f, 0.47455359f),
+            G(DUST_MOTE, 229.36508f, 2145.324f, 3.215316f, -3.7418675f, 5.903451f, 0.10351115f),
+            G(MOONLET, 441.6685f, 2101.8096f, -1.1173196f, 35.750195f, -0.6638303f, 0.09401982f),
+            G(BOULDER, 142.64642f, 2119.9536f, -12.946549f, 23.893131f, 1.3713385f, 1.009284f),
+            G(BOULDER, 791.30414f, 2119.9536f, 17.16014f, -3.8467221f, 0.9502179f, 0.22073925f),
+            G(STRANGE_PLANET, 267.05518f, 2002.3655f, 7.631667f, 44.41968f, -0.0101422155f, -0.0365602f),
         )
     }
 

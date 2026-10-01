@@ -6,7 +6,6 @@ import com.quokkalabs.strangeplanet.data.model.MergeTier
 import com.quokkalabs.strangeplanet.data.model.Orb
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 import kotlin.random.Random
 
@@ -115,10 +114,6 @@ class MergeEngineTest {
         assertTrue("some merges should have happened", end.orbs.size < 25 && end.score > 0)
     }
 
-    @Ignore(
-        "BUG: MergeEngine.update runs resolveCollisions after resolveWalls with no final wall pass, and spawns " +
-            "merged orbs unclamped, so orbs poke up to ~30px through the vessel walls/floor for a frame",
-    )
     @Test
     fun crowdedVessel_orbsStayInsideWallsWithin1px() {
         runCrowdedVessel { tick, s, o, r ->

@@ -5,7 +5,6 @@ import com.quokkalabs.strangeplanet.data.model.CreatureState
 import com.quokkalabs.strangeplanet.data.model.CreatureType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 
 /** Free-roaming planet creatures (home screen). */
@@ -76,10 +75,6 @@ class PhysicsEngineTest {
         }
     }
 
-    @Ignore(
-        "BUG: PhysicsEngine.update resolves creature collisions after the wall clamp, so a collision near a " +
-            "wall pushes a creature up to ~35px off screen for a frame",
-    )
     @Test
     fun manyUpdates_creaturesStayStrictlyOnScreen() {
         val engine = PhysicsEngine(w, h)

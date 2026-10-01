@@ -186,6 +186,7 @@ class MergeEngine(
             }
             resolveWalls(n)
             repeat(3) { resolveCollisions(n) }
+            clampInsideVessel(n)
         }
         for (i in 0 until n) {
             orbs[i] = orbs[i].copy(
@@ -262,8 +263,9 @@ class MergeEngine(
                             Orb(
                                 id = nextOrbId(),
                                 tier = formed,
-                                x = mx,
-                                y = my,
+                                // The bigger orb can overlap a wall at the pair's midpoint.
+                                x = clampX(mx, radiusOf(formed)),
+                                y = minOf(my, vesselBottom - radiusOf(formed)),
                                 vx = (a.vx + b.vx) / 2f,
                                 vy = (a.vy + b.vy) / 2f,
                             ),
@@ -349,6 +351,24 @@ class MergeEngine(
             bInertia[i] = inertiaOf(o.tier)
             bMu[i] = o.tier.mu
         }
+    }
+
+    /**
+     * Collision passes run after the wall pass and can shove an orb through a wall
+     * or the floor (up to ~30 px, visible for a frame). Put positions back inside.
+     */
+    private fun clampInsideVessel(n: Int) {
+        for (i in 0 until n) {
+            bX[i] = clampX(bX[i], bR[i])
+            val maxY = vesselBottom - bR[i]
+            if (bY[i] > maxY) bY[i] = maxY
+        }
+    }
+
+    private fun clampX(x: Float, r: Float): Float = when {
+        x - r < vesselLeft -> vesselLeft + r
+        x + r > vesselRight -> vesselRight - r
+        else -> x
     }
 
     /** Cleared merge flags, one per orb index. */

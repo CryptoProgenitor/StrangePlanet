@@ -10,7 +10,6 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 import kotlin.random.Random
 
@@ -104,7 +103,6 @@ class TetrisEngineTest {
         assertEquals(row0 + 5, s.active!!.row)
     }
 
-    @Ignore("BUG: TetrisEngine.finishLock stores the pre-lock grid (s.grid) when lines clear, so the locked piece's cells outside the cleared rows vanish")
     @Test
     fun lineClear_keepsLockedPieceCellsAboveClearedRows() {
         // Rows 18 and 19 are full except column 0; a vertical I in column 0 fills
