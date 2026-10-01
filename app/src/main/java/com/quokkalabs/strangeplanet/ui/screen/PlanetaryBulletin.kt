@@ -1,5 +1,7 @@
 package com.quokkalabs.strangeplanet.ui.screen
 
+import androidx.compose.runtime.CompositionLocalProvider
+import com.quokkalabs.strangeplanet.ui.components.LocalPosterStill
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
@@ -214,7 +216,13 @@ fun PlanetaryBulletin(
                     modifier = Modifier.fillMaxSize(),
                     onFocusedChange = { focused = it },
                     onLaunch = { destinations[it].onClick() },
-                ) { idx -> destinations[idx].poster() }
+                ) { idx ->
+                    // Side cards are blurred; give them a still poster so the blur
+                    // isn't recomputed every frame.
+                    CompositionLocalProvider(LocalPosterStill provides (idx != focused)) {
+                        destinations[idx].poster()
+                    }
+                }
             }
 
             Crossfade(

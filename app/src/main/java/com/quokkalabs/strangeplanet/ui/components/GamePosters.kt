@@ -1,6 +1,8 @@
 package com.quokkalabs.strangeplanet.ui.components
 
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.InfiniteRepeatableSpec
+import androidx.compose.animation.core.InfiniteTransition
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -9,7 +11,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -36,6 +41,26 @@ import kotlin.math.sin
  * the carousel never carries stale screenshot assets. No ViewModels, no game
  * logic — just an ambient Canvas that stays in sync with the codebase.
  */
+
+/**
+ * True for carousel cards that aren't in front. Those cards are blurred, and an
+ * animating poster has to be re-blurred every frame (expensive on some GPUs), so
+ * they show a still frame instead; the front card animates as normal.
+ */
+val LocalPosterStill = compositionLocalOf { false }
+
+/** [animateFloat] that holds its midpoint while [LocalPosterStill] is set. */
+@Composable
+private fun InfiniteTransition.posterFloat(
+    initialValue: Float,
+    targetValue: Float,
+    animationSpec: InfiniteRepeatableSpec<Float>,
+    label: String,
+): State<Float> {
+    val animated = animateFloat(initialValue, targetValue, animationSpec, label)
+    if (!LocalPosterStill.current) return animated
+    return remember(initialValue, targetValue) { mutableFloatStateOf((initialValue + targetValue) / 2f) }
+}
 
 private val SpaceTop = Color(0xFF120A22)
 private val SpaceBottom = Color(0xFF1A0030)
@@ -72,12 +97,12 @@ private fun DrawScope.navyField() {
 @Composable
 fun PongPoster(modifier: Modifier = Modifier) {
     val t = rememberInfiniteTransition(label = "pong")
-    val px by t.animateFloat(
+    val px by t.posterFloat(
         0f, 1f,
         infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Reverse),
         label = "px",
     )
-    val py by t.animateFloat(
+    val py by t.posterFloat(
         0.25f, 0.78f,
         infiniteRepeatable(tween(1500, easing = LinearEasing), RepeatMode.Reverse),
         label = "py",
@@ -136,12 +161,12 @@ fun PongPoster(modifier: Modifier = Modifier) {
 fun InvadersPoster(modifier: Modifier = Modifier) {
     val stars = remember { starfield(26, 11) }
     val t = rememberInfiniteTransition(label = "si")
-    val sway by t.animateFloat(
+    val sway by t.posterFloat(
         -1f, 1f,
         infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Reverse),
         label = "sway",
     )
-    val shot by t.animateFloat(
+    val shot by t.posterFloat(
         0f, 1f,
         infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Restart),
         label = "shot",
@@ -204,7 +229,7 @@ fun InvadersPoster(modifier: Modifier = Modifier) {
 fun StrangeMatchPoster(modifier: Modifier = Modifier) {
     val stars = remember { starfield(20, 23) }
     val t = rememberInfiniteTransition(label = "sm")
-    val pulse by t.animateFloat(
+    val pulse by t.posterFloat(
         0.4f, 1f,
         infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Reverse),
         label = "pulse",
@@ -251,7 +276,7 @@ fun StrangeMatchPoster(modifier: Modifier = Modifier) {
 fun MergePoster(modifier: Modifier = Modifier) {
     val stars = remember { starfield(22, 31) }
     val t = rememberInfiniteTransition(label = "merge")
-    val bob by t.animateFloat(
+    val bob by t.posterFloat(
         -1f, 1f,
         infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Reverse),
         label = "bob",
@@ -308,7 +333,7 @@ fun MergePoster(modifier: Modifier = Modifier) {
 @Composable
 fun PacPoster(modifier: Modifier = Modifier) {
     val t = rememberInfiniteTransition(label = "pac")
-    val mouth by t.animateFloat(
+    val mouth by t.posterFloat(
         4f, 42f,
         infiniteRepeatable(tween(380, easing = LinearEasing), RepeatMode.Reverse),
         label = "mouth",
@@ -375,17 +400,17 @@ fun PacPoster(modifier: Modifier = Modifier) {
 fun AsteroidPoster(modifier: Modifier = Modifier) {
     val stars = remember { starfield(24, 41) }
     val t = rememberInfiniteTransition(label = "ast")
-    val spin by t.animateFloat(
+    val spin by t.posterFloat(
         0f, 360f,
         infiniteRepeatable(tween(9000, easing = LinearEasing), RepeatMode.Restart),
         label = "spin",
     )
-    val thrust by t.animateFloat(
+    val thrust by t.posterFloat(
         0.2f, 0.5f,
         infiniteRepeatable(tween(500, easing = LinearEasing), RepeatMode.Reverse),
         label = "thrust",
     )
-    val bullet by t.animateFloat(
+    val bullet by t.posterFloat(
         0f, 1f,
         infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
         label = "bullet",
@@ -441,12 +466,12 @@ fun AsteroidPoster(modifier: Modifier = Modifier) {
 @Composable
 fun AmbientPoster(modifier: Modifier = Modifier) {
     val t = rememberInfiniteTransition(label = "amb")
-    val ring by t.animateFloat(
+    val ring by t.posterFloat(
         -15f, 15f,
         infiniteRepeatable(tween(3400, easing = LinearEasing), RepeatMode.Reverse),
         label = "ring",
     )
-    val glow by t.animateFloat(
+    val glow by t.posterFloat(
         0.18f, 0.34f,
         infiniteRepeatable(tween(2200, easing = LinearEasing), RepeatMode.Reverse),
         label = "glow",
@@ -500,7 +525,7 @@ fun AmbientPoster(modifier: Modifier = Modifier) {
 @Composable
 fun CreaturePoster(modifier: Modifier = Modifier) {
     val t = rememberInfiniteTransition(label = "crt")
-    val bob by t.animateFloat(
+    val bob by t.posterFloat(
         -1f, 1f,
         infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Reverse),
         label = "bob",
@@ -559,12 +584,12 @@ private fun DrawScope.dpf(value: Float = 1f): Float = value * density
 @Composable
 fun TetrisPoster(modifier: Modifier = Modifier) {
     val t = rememberInfiniteTransition(label = "tet")
-    val drop by t.animateFloat(
+    val drop by t.posterFloat(
         0f, 1f,
         infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Restart),
         label = "drop",
     )
-    val flash by t.animateFloat(
+    val flash by t.posterFloat(
         0.3f, 1f,
         infiniteRepeatable(tween(600, easing = LinearEasing), RepeatMode.Reverse),
         label = "flash",
