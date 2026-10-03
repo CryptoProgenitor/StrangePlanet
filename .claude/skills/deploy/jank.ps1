@@ -16,7 +16,7 @@ $log = Join-Path $root 'build\jank-log.txt'
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
 
 $serials = if ($Serial) { @($Serial) } else {
-    @(adb devices | Select-Object -Skip 1 | Where-Object { $_ -match '\tdevice$' } | ForEach-Object { ($_ -split '\s+')[0] })
+    @(adb devices | Select-Object -Skip 1 | Where-Object { $_ -match '\tdevice$' } | ForEach-Object { ($_ -split "`t")[0] })
 }
 if ($serials.Count -eq 0) { Write-Host 'FAIL: no devices connected.'; exit 1 }
 
@@ -26,7 +26,8 @@ Start-Sleep -Seconds $Seconds
 
 foreach ($s in $serials) {
     $model = (adb -s $s shell getprop ro.product.model).Trim()
-    $refresh = (adb -s $s shell dumpsys display | Select-String 'mRefreshRate=|renderFrameRate' | Select-Object -First 1).Line.Trim()
+    $refreshMatch = adb -s $s shell dumpsys display | Select-String -Pattern 'renderFrameRate [0-9.]+' | Select-Object -First 1
+    $refresh = if ($refreshMatch) { $refreshMatch.Matches[0].Value } else { '?' }
     $stats = adb -s $s shell dumpsys gfxinfo $pkg |
         Select-String 'Total frames rendered|Janky frames|50th percentile|90th percentile|95th percentile|99th percentile|Number Missed Vsync|Number Slow UI thread|Number Slow issue draw|Number Frame deadline missed' |
         ForEach-Object { $_.Line.Trim() } | Select-Object -Unique

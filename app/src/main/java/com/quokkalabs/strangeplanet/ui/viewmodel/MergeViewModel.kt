@@ -1,6 +1,7 @@
 package com.quokkalabs.strangeplanet.ui.viewmodel
 
 import android.app.Application
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.lifecycle.AndroidViewModel
@@ -430,21 +431,27 @@ class MergeViewModel(application: Application) : AndroidViewModel(application) {
         _canUndo.value = false
         _state.value = e.startGame(_state.value.copy(highScore = highScore))
 
+        // The countdown is measured against a fixed end time on the phone's clock.
+        // It used to count delay(250) naps; each nap overran by however long the busy
+        // main thread took to get back to it, so each phone's "second" was a bit long
+        // — by a different amount per phone — and the two match clocks drifted apart.
+        val endAtMs = SystemClock.elapsedRealtime() + durationSeconds * 1000L
         matchJob?.cancel()
         matchJob = viewModelScope.launch {
-            var msAccum = 0
+            var nextHeartbeatMs = 0L
             while (isActive && _matchActive.value) {
-                delay(250)
-                msAccum += 250
+                val now = SystemClock.elapsedRealtime()
                 // Heartbeat the opponent ~4x/sec.
-                btManager?.sendScore(_state.value.score, selfDone)
-                if (msAccum >= 1000) {
-                    msAccum = 0
-                    if (!selfDone) {
-                        _timeRemaining.value = (_timeRemaining.value - 1).coerceAtLeast(0)
-                        if (_timeRemaining.value == 0) markSelfDone()
-                    }
+                if (now >= nextHeartbeatMs) {
+                    btManager?.sendScore(_state.value.score, selfDone)
+                    nextHeartbeatMs = now + 250L
                 }
+                if (!selfDone) {
+                    val remaining = ((endAtMs - now + 999L) / 1000L).toInt().coerceAtLeast(0)
+                    if (remaining != _timeRemaining.value) _timeRemaining.value = remaining
+                    if (remaining == 0) markSelfDone()
+                }
+                delay(50)
             }
         }
     }

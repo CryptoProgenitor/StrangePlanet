@@ -23,8 +23,8 @@ android {
         applicationId = "com.quokkalabs.strangeplanet"
         minSdk = 26
         targetSdk = 36
-        versionCode = 69
-        versionName = "3.5.2"
+        versionCode = 70
+        versionName = "3.5.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

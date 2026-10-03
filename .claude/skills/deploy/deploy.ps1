@@ -22,7 +22,7 @@ $apk = Join-Path $root "app\build\outputs\apk\$variant\app-$variant.apk"
 function Get-Devices {
     $lines = adb devices | Select-Object -Skip 1 | Where-Object { $_.Trim() }
     foreach ($line in $lines) {
-        $parts = $line -split '\s+'
+        $parts = $line -split "`t"  # serials can contain spaces (wireless: 'adb-XXX (2)._adb-tls...')
         [pscustomobject]@{ Serial = $parts[0]; State = $parts[1] }
     }
 }
